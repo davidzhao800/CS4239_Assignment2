@@ -1,4 +1,7 @@
 Debug/
+bin/
+build/
+test/
 .cproject
 .settings/
 .project
