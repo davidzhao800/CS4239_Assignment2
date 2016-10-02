@@ -1,5 +1,6 @@
 #include "IRReader.h"
 #include "Messages.h"
+#include "EscapeDetect.h"
 #include <iostream>
 #include <vector>
 
@@ -15,10 +16,17 @@ int main(int argc, char* argv[]) {
 			filenameBuffer.push_back(argv[i]);
 		}
 	}
+
 	IRReader reader;
+	EscapeDetect ed;
 	reader.setIRFileNames(filenameBuffer);
-	std::cout << "Success set IR file name!" << std::endl;
+	//std::cout << "Success set IR file name!" << std::endl;
 	int success = reader.readIRFiles();
-	if (success)
+	if (success) {
+		std::cout << "=====================Traverse===================" << std::endl;
 		reader.traverseAll();
+		ed.setModule(reader.getModule());
+		std::cout << "==================Escape Detect=================" << std::endl;
+		ed.detectEscape();
+	}
 }

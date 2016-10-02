@@ -17,19 +17,13 @@
 #include <string>
 #include <iostream>
 
-#ifndef IRReader_H
-#define IRReader_H
-class IRReader {
+#ifndef ESCAPEDETECT_H
+#define ESCAPEDETECT_H
+class EscapeDetect {
 private:
-	llvm::LLVMContext &Context = llvm::getGlobalContext();
-	llvm::SMDiagnostic Err;
-	std::vector<std::string> fileNames;
 	llvm::Module *module;
 public:
-	IRReader();
-	void setIRFileNames(std::vector<std::string> aFileNames);
-	int readIRFiles();
-	llvm::Module *getModule();
-	void traverseAll();
+	void setModule(llvm::Module *aModule);
+	void detectEscape();
 };
 #endif

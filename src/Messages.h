@@ -10,7 +10,10 @@ public:
 	static const string ERROR_MAIN_NO_IR_FILE;
 	static const string ERROR_IRREADER_FAIL_READ;
 
+	static const string IRREADER_READ_FILE;
+
 	static string formatErrorMessage(string message);
 	static string formatErrorMessage(string message, string name);
+	static string formatMessage(string message, string name);
 };
 #endif

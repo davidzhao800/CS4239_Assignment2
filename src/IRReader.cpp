@@ -10,8 +10,12 @@ void IRReader::setIRFileNames(std::vector<std::string> aFileNames) {
 int IRReader::readIRFiles() {
 	//support only single file
 	std::string filename = fileNames[0];
-	std::cout << filename << std::endl;
+	std::string message = Messages::formatMessage
+		(Messages::IRREADER_READ_FILE, filename);
+	std::cout << message << std::endl;
+
 	module = ParseIRFile(filename, Err, Context);
+
 	if (module == nullptr) {
 		std::string errorMessage = Messages::formatErrorMessage
 			(Messages::ERROR_IRREADER_FAIL_READ, filename);
@@ -19,6 +23,10 @@ int IRReader::readIRFiles() {
 		return 0;
 	}
 	return 1;
+}
+
+llvm::Module *IRReader::getModule() {
+	return module;
 }
 
 void IRReader::traverseAll() {
