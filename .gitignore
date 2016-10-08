@@ -2,3 +2,4 @@ Debug/
 .cproject
 .settings/
 .project
+2/tests/*.ll
