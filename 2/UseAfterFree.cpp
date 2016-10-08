@@ -106,15 +106,16 @@ int main(int argc, char **argv) {
 }
 
 bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localValue, set<pair<BasicBlock*,BasicBlock*>> * edges) {
-	printf("current executing block is %p\n", bb);
-	cout << "number of instructions: " << bb->getInstList().size() << endl;
+	//printf("current executing block is %p\n", bb);
+	//cout << "number of instructions: " << bb->getInstList().size() << endl;
+
 	int count=0;
 	BasicBlock::iterator i = bb->end();
 	BasicBlock::iterator e = bb->begin();
 	e--;
 	i--;
 	for (; i != e; --i){
-		cout << i->getOpcode() << endl;
+		//cout << i->getOpcode() << endl;
 		count++;
 		if (i->getOpcode() == Instruction::Store) {
 
@@ -123,9 +124,22 @@ bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localVal
 			StringRef op1 = storeInstr->getOperand(0)->getName();
 
 			if (op2 == returnName) {
-				cout << "wtf!" << endl;
+				//cout << "wtf!" << endl;
 				if (localValue.find(op1) != localValue.end()) {
 					printf("Return pointer points to local var %s\n", op1);
+
+					errs() << "WARNING: ";
+					if (MDNode *n = i->getMetadata("dbg")) { // Here I is an LLVM instruction
+
+						DILocation loc(n); // DILocation is in DebugInfo.h
+						unsigned line = loc.getLineNumber();
+						StringRef file = loc.getFilename();
+						StringRef dir = loc.getDirectory();
+						errs() << "Line " << line << " of file " << file.str()
+								<< " in " << dir.str() << ": ";
+					}
+					errs() << "Stack-local variable escape!\n";
+
 					return true;
 				} else {
 					if (count < bb->getInstList().size() && i->getPrevNode()->getOpcode() == Instruction::GetElementPtr) {
@@ -136,6 +150,18 @@ bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localVal
 
 						if (localValue.find(op) != localValue.end()) {
 							printf("Return pointer points to local array %s\n", op);
+							errs() << "WARNING: ";
+							if (MDNode *n = i->getMetadata("dbg")) { // Here I is an LLVM instruction
+
+								DILocation loc(n); // DILocation is in DebugInfo.h
+								unsigned line = loc.getLineNumber();
+								StringRef file = loc.getFilename();
+								StringRef dir = loc.getDirectory();
+								errs() << "Line " << line << " of file "
+										<< file.str() << " in " << dir.str()
+										<< ": ";
+							}
+							errs() << "Stack-local array escape!\n";
 							return true;
 						}
 
@@ -144,24 +170,27 @@ bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localVal
 					}
 
 					printf("Return pointer points to non-local var %s\n", op1);
-					//return false;
+					return false;
 				}
 			}
 		}
 	}
 
+	bool result = false;
+
 	for (pred_iterator PI = pred_begin(bb), E = pred_end(bb); PI != E;
 			++PI) {
+		//printf("%p is getting its predecor\n",bb);
 		BasicBlock *Pred = *PI;
 		pair<BasicBlock*,BasicBlock*> newEdge (Pred, bb);
 
 		if (edges->find(newEdge) == edges->end()) {
-			printf("%p -> %p\n", Pred, bb);
+			//printf("%p -> %p\n", Pred, bb);
 			edges->insert(newEdge);
-			//cout << edges->size() << endl;
-			return check_escape(Pred, returnName, localValue, edges);
+			//cout << "Number of edges: " << edges->size() << endl;
+			result = result || check_escape(Pred, returnName, localValue, edges);
 		}
 
 	}
-	return false;
+	return result;
 }
