@@ -34,7 +34,7 @@
 
 using namespace std;
 using namespace llvm;
-bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localValue);
+bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localValue, set<pair<BasicBlock*,BasicBlock*>> *edges);
 
 int main(int argc, char **argv) {
 	LLVMContext &Context = getGlobalContext();
@@ -95,38 +95,56 @@ int main(int argc, char **argv) {
 			cout << "Size of localPointer: " << localPointer.size() << endl;
 			cout << "Size of localVar: "  << localVar.size() << endl;
 
-			bool result = check_escape( lastBB, retPointerName, localVar);
-			cout << "This function does not escape? "  << result << endl;
+			set<pair<BasicBlock*,BasicBlock*>> edges;
+
+			bool result = check_escape( lastBB, retPointerName, localVar, &edges);
+			cout << "This function escapes? "  << result << endl;
 		}
 
 	}
 	return 0;
 }
 
-bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localValue) {
-
-	for (BasicBlock::iterator i = bb->end(), e = bb->begin(); i != e; --i){
+bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localValue, set<pair<BasicBlock*,BasicBlock*>> * edges) {
+	printf("current executing block is %p\n", bb);
+	cout << "number of instructions: " << bb->getInstList().size() << endl;
+	int count=0;
+	BasicBlock::iterator i = bb->end();
+	BasicBlock::iterator e = bb->begin();
+	e--;
+	i--;
+	for (; i != e; --i){
+		cout << i->getOpcode() << endl;
+		count++;
 		if (i->getOpcode() == Instruction::Store) {
+
 			StoreInst *storeInstr = dyn_cast<StoreInst>(i);
 			StringRef op2 = storeInstr->getOperand(1)->getName();
 			StringRef op1 = storeInstr->getOperand(0)->getName();
 
 			if (op2 == returnName) {
+				cout << "wtf!" << endl;
 				if (localValue.find(op1) != localValue.end()) {
 					printf("Return pointer points to local var %s\n", op1);
-					return false;
+					return true;
 				} else {
-					if (i->getPrevNode()->getOpcode() == Instruction::GetElementPtr) {
+					if (count < bb->getInstList().size() && i->getPrevNode()->getOpcode() == Instruction::GetElementPtr) {
 						GetElementPtrInst *getElementPtrInstr = dyn_cast<GetElementPtrInst>(i->getPrevNode());
 
 						// array name
 						StringRef op = getElementPtrInstr->getOperand(0)->getName();
 
+						if (localValue.find(op) != localValue.end()) {
+							printf("Return pointer points to local array %s\n", op);
+							return true;
+						}
+
 						printf("Return pointer points to non-local array %s\n", op);
-						return false;
+
 					}
+
 					printf("Return pointer points to non-local var %s\n", op1);
-					return true;
+					//return false;
 				}
 			}
 		}
@@ -135,7 +153,15 @@ bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localVal
 	for (pred_iterator PI = pred_begin(bb), E = pred_end(bb); PI != E;
 			++PI) {
 		BasicBlock *Pred = *PI;
-		return check_escape( Pred, returnName, localValue);
+		pair<BasicBlock*,BasicBlock*> newEdge (Pred, bb);
+
+		if (edges->find(newEdge) == edges->end()) {
+			printf("%p -> %p\n", Pred, bb);
+			edges->insert(newEdge);
+			//cout << edges->size() << endl;
+			return check_escape(Pred, returnName, localValue, edges);
+		}
+
 	}
-	return true;
+	return false;
 }
