@@ -35,6 +35,7 @@
 using namespace std;
 using namespace llvm;
 bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localValue, set<pair<BasicBlock*,BasicBlock*>> *edges);
+void getReturn(BasicBlock* bb, Value* returnValue, set<pair<BasicBlock*,BasicBlock*>>* edges, set<pair<BasicBlock*, StringRef>>* mutipleReturn);
 
 int main(int argc, char **argv) {
 	LLVMContext &Context = getGlobalContext();
@@ -57,19 +58,39 @@ int main(int argc, char **argv) {
 			Value *returnValue;
 			StringRef retPointerName;
 			BasicBlock *lastBB;
+			set<pair<BasicBlock*,BasicBlock*>> edges;
+			set<pair<BasicBlock*, StringRef>> mutipleReturn;
 
 			for (auto &bb : F) {
 				// get return pointer name
 				for (auto &i : bb) {
 					if (i.getOpcode() == Instruction::Ret) {
 						ReturnInst *retInstr = dyn_cast<ReturnInst>(&i);
+						lastBB = &bb;
 						returnValue = retInstr->getPrevNode()->getOperand(0);
 						if(returnValue->hasName()){
 							retPointerName = returnValue->getName();
-						}
 
-						printf("Return pointer is %s\n", retPointerName);
-						lastBB = &bb;
+							printf("Return pointer is %s\n", retPointerName);
+
+							pair<BasicBlock*,StringRef> onlyReturn(lastBB, retPointerName);
+
+							mutipleReturn.insert(onlyReturn);
+
+						} else {
+
+							printf("Return value pointer is %p\n", returnValue);
+
+							getReturn(lastBB, returnValue, &edges,
+									&mutipleReturn);
+//							cout << "size of returns " << mutipleReturn.size()
+//									<< endl;
+//							for (auto &x : mutipleReturn) {
+//								printf("%s\n", x.second);
+//								printf("%p\n", x.first);
+//							}
+
+						}
 					}
 				}
 
@@ -92,17 +113,64 @@ int main(int argc, char **argv) {
 
 				}
 			}
+
+
 			cout << "Size of localPointer: " << localPointer.size() << endl;
 			cout << "Size of localVar: "  << localVar.size() << endl;
 
-			set<pair<BasicBlock*,BasicBlock*>> edges;
 
-			bool result = check_escape( lastBB, retPointerName, localVar, &edges);
-			cout << "This function escapes? "  << result << endl;
+			set<pair<BasicBlock*,BasicBlock*>> checkEdges;
+
+			for (auto &x : mutipleReturn) {
+				bool result = check_escape(x.first, x.second, localVar,
+						&checkEdges);
+				cout << "This function escapes? " << result << endl;
+			}
+
+			//bool result = check_escape( lastBB, retPointerName, localVar, &checkEdges);
+			//cout << "This function escapes? "  << result << endl;
 		}
 
 	}
 	return 0;
+}
+
+void getReturn(BasicBlock* bb, Value* returnValue, set<pair<BasicBlock*,BasicBlock*>>* edges, set<pair<BasicBlock*, StringRef>>* mutipleReturn) {
+	//int count=0;
+	BasicBlock::iterator i = bb->end();
+	BasicBlock::iterator e = bb->begin();
+	e--;
+	i--;
+	for (; i != e; --i){
+		//cout << i->getOpcode() << endl;
+		//count++;
+		if (i->getOpcode() == Instruction::Store) {
+
+			StoreInst *storeInstr = dyn_cast<StoreInst>(i);
+			Value* op2 = storeInstr->getOperand(1);
+			Value* op1 = storeInstr->getOperand(0);
+			StringRef returnPointerName;
+
+			if (op2 == returnValue && i->getPrevNode()->getOpcode() == Instruction::Load) {
+				returnPointerName = i->getPrevNode()->getOperand(0)->getName();
+				pair<BasicBlock*,StringRef> newReturn (bb,returnPointerName);
+				mutipleReturn->insert(newReturn);
+			}
+		}
+	}
+	for (pred_iterator PI = pred_begin(bb), E = pred_end(bb); PI != E; ++PI) {
+		//printf("%p is getting its predecor\n",bb);
+		BasicBlock *Pred = *PI;
+		pair<BasicBlock*, BasicBlock*> newEdge(Pred, bb);
+
+		if (edges->find(newEdge) == edges->end()) {
+			//printf("%p -> %p\n", Pred, bb);
+			edges->insert(newEdge);
+			//cout << "Number of edges: " << edges->size() << endl;
+			getReturn(Pred, returnValue, edges, mutipleReturn);
+		}
+
+	}
 }
 
 bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localValue, set<pair<BasicBlock*,BasicBlock*>> * edges) {
