@@ -8,12 +8,63 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Analysis/CFG.h"
 #include <set>
 
 using namespace llvm;
 
 char** arg_v;
 int arg_c;
+
+std::set<std::string> traceback(LoadInst *L){	
+
+	std::set<std::pair<BasicBlock*,BasicBlock*>> history;
+	printf("Operand 0 = %s\n", L->getOperand(0)->getName().str().c_str());
+	std::string str = L->getOperand(0)->getName().str();
+	std::set<Instruction*> pending;
+	std::set<std::string> result;
+
+	pending.insert(L);
+
+	while (!pending.empty()){
+		//first instruction in a block
+		Instruction* I = *pending.begin();
+		pending.erase(I);
+
+		StoreInst *S = dyn_cast<StoreInst>(I);
+
+		if (S != nullptr){
+			if (S->getOperand(1)->getName().str() == str){
+				printf("found store inst %p:",S);
+				printf("Store Operand 0 = %s\n", S->getOperand(0)->getName().str().c_str());
+				result.insert(S->getOperand(0)->getName().str());				
+				continue;
+			}
+		}
+
+		//if (I->getPrevNode() == nullptr){
+		if (I==I->getParent()->begin()){
+			BasicBlock *B = I->getParent();
+			for (pred_iterator it = pred_begin(B);
+					it != pred_end(B); it++){
+				std::pair<BasicBlock*,BasicBlock*> edge(B,*it);
+				if (history.find(edge) == history.end()){
+					history.insert(edge);
+					Instruction* last = (*it)->end()--;
+					if (last!=nullptr){
+						pending.insert(last);
+					}
+				}
+			}
+		}
+
+		else{
+			pending.insert(I->getPrevNode());
+		}
+	}
+
+	return result;
+}
 
 Function* getFunctionByName(Module* modules[], std::string name, int length){
 	for (int i=0; i<length; i++){
@@ -52,30 +103,62 @@ void processFunction(Module* modules[], std::set<Function*> *pending, std::set<F
 	//f == nullptr when it is a system call (eg printf)
 	if (f!=nullptr){
 		for (auto &BB: *f){ // For each basic block BB
+			Instruction* prev = nullptr;
 			for (auto &I: BB) {// For each instruction I
 				CallInst *Call = dyn_cast<CallInst>(&I);
 
-				if (Call == nullptr) continue;
-				Function *G = Call->getCalledFunction();
+				if (Call != nullptr){
+					Function *G = Call->getCalledFunction();
+					if (G == nullptr) {
+						if (prev!=nullptr){
+							LoadInst *L = dyn_cast<LoadInst>(prev);
+							if (L != nullptr){
+								printf("Operand 0 = %s\n", L->getOperand(0)->getName().str().c_str());
+								std::set<std::string> res = traceback(L);
+								for (std::set<std::string>::iterator it = res.begin(); it!=res.end();it++){
+									
+									Function* curr = getFunctionByName(modules,*it,arg_c-1);
+									if (curr!=nullptr){
+									bool shouldAdd = true;
+									if (checked->find(curr) != checked->end()){
+										printf("funciton %s found in checked!\n", (curr)->getName().str().c_str());
+										shouldAdd = false;									
+									}
+									if (pending->find(curr) != pending->end()){
+										printf("funciton %s found in pending!\n", (curr)->getName().str().c_str());
+										shouldAdd = false;									
+									}
+									if (shouldAdd){
+										printf("inserting %s into pending!\n", curr->getName().str().c_str());
+										pending->insert(curr);
+									}	
+									}
+								}
+							}
+						}
+					}	
+					else{
+						bool shouldAdd = true;						
+						if (checked->find(G) != checked->end()){
+							printf("funciton %s found in checked!\n", G->getName().str().c_str());
+							shouldAdd = false;
+						}
 
-				if (G == nullptr) continue;	
-
-				if (checked->find(G) != checked->end()){
-					checked->insert(f);
-					pending->erase(f);
-					printf("funciton %s found in checked!\n", G->getName().str().c_str());
-					continue;
+						if (pending->find(G) != pending->end()){
+							printf("funciton %s found in pending!\n", G->getName().str().c_str());
+							shouldAdd = false;
+						}
+						if (shouldAdd){
+							printf("inserting %s into pending!\n", G->getName().str().c_str());
+							pending->insert(G);
+						}		
+					}
 				}
-
-				if (pending->find(G) != pending->end()){
-					printf("funciton %s found in pending!\n", G->getName().str().c_str());
-					continue;
-				}
-
-				printf("inserting %s into pending!\n", G->getName().str().c_str());
-				pending->insert(G);
+				prev = &I;
 			}
+			prev = nullptr;
 		}
+		
 
 		checked->insert(f);
 		pending->erase(f);

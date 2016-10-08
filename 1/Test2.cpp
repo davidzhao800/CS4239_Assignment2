@@ -16,11 +16,6 @@ using namespace llvm;
 char** arg_v;
 int arg_c;
 void traceback(LoadInst *L){
-	//printf("traceback: 1    %d\n", L==nullptr);
-	//printf("traceback: 2    %d\n", L->getPrevNode()->getOperand(0)->getName());
-	//printf("traceback: 3    %s\n", L->getPrevNode()->getOperand(0)->getName().str().c_str());	
-
-	
 
 	std::set<std::pair<BasicBlock*,BasicBlock*>> history;
 	printf("Operand 0 = %s\n", L->getOperand(0)->getName().str().c_str());
