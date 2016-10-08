@@ -12,6 +12,8 @@
 #include "llvm/LinkAllPasses.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/ADT/PostOrderIterator.h"
+#incldue "llvm/ADT/ilist.h"
 #include "Messages.h"
 #include <vector>
 #include <string>
@@ -22,7 +24,7 @@
 class EscapeDetect {
 private:
 	llvm::Module *module;
-
+	bool isLocalInstruction(llvm::Instruction);
 public:
 	void setModule(llvm::Module *aModule);
 	void detectEscape();

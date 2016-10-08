@@ -12,6 +12,8 @@
 #include "llvm/LinkAllPasses.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/ADT/ilist.h"
 #include "Messages.h"
 #include <vector>
 #include <string>

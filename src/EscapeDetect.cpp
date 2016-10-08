@@ -6,19 +6,19 @@ void EscapeDetect::setModule(llvm::Module *aModule) {
 
 void EscapeDetect::detectEscape() {
 	for (auto &F: *module)	// For each function F
-	for (auto &BB: F) 	// For each basic block BB
-	for (auto &I: BB) 	// For each instruction I
 	{
-		std::cout << I.getOpcode() << ": ";
-		unsigned num = I.getNumOperands();
+		llvm::outs() << "Basic Blocks of " << F.getName() << " in post-order\n";
 		
-		for (unsigned i = 0; i < num; i++) {
-			std::cout << I.getOperand(i)->getName().str().c_str() << " ";
+		for (llvm::po_iterator<llvm::BasicBlock *> I = llvm::po_begin(&F.getEntryBlock()),
+		IE = llvm::po_end(&F.getEntryBlock()); 
+		I != IE; ++I) {
+			llvm::outs() << " " << (*I)->getName() << "\n";
 		}
-		std::cout << std::endl;
 	}
 }
 
 bool EscapeDetect::isLocalInstruction(llvm::Instruction i) {
-	
+	return false;
 }
+
+
