@@ -10,3 +10,4 @@ char *escape_local() {
     return p;
 }
 
+//escape: yes

@@ -5,7 +5,9 @@ char *escape_local() {
     char *p;
     int i =0;
     if(i){
-    	p = array[];
+    	p = array;
     } 
     return p;
 }
+
+//escape: yes

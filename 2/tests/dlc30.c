@@ -3,3 +3,5 @@ char *init_array(void) {
     char *p = array;
     return p;
 }
+
+//escape: yes
