@@ -22,7 +22,7 @@
 class EscapeDetect {
 private:
 	llvm::Module *module;
-	bool isLocalInstruction(llvm::Instruction);
+
 public:
 	void setModule(llvm::Module *aModule);
 	void detectEscape();

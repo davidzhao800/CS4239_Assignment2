@@ -20,5 +20,5 @@ void EscapeDetect::detectEscape() {
 }
 
 bool EscapeDetect::isLocalInstruction(llvm::Instruction i) {
-	
+
 }
