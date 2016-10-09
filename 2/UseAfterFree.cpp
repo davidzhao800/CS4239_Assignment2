@@ -1,15 +1,13 @@
-//===------ BadCast.cpp - C Secure Coding Standard Violation Detector -----===//
+//===------ UseAfterFree.cpp - C Secure Coding Standard Violation Detector -----===//
 //
 //                     Security Analysis
 //
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
-// According to Rule EXP36-C of SEI CERT C Coding Standard at
+// According to Rule DCL30-C of SEI CERT C Coding Standard at
 // https://www.securecoding.cert.org/confluence/display/c/SEI+CERT+C+Coding+Standard
-// Do not cast pointers into more strictly aligned pointer types.
+// Declare objects with appropriate storage durations
 //
 // This analysis detects such violations.
 //
@@ -36,6 +34,7 @@ using namespace std;
 using namespace llvm;
 bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localValue, set<pair<BasicBlock*,BasicBlock*>> *edges);
 void getReturn(BasicBlock* bb, Value* returnValue, set<pair<BasicBlock*,BasicBlock*>>* edges, set<pair<BasicBlock*, StringRef>>* mutipleReturn);
+StringRef functionName;
 
 int main(int argc, char **argv) {
 	LLVMContext &Context = getGlobalContext();
@@ -48,9 +47,9 @@ int main(int argc, char **argv) {
 
 	for (auto &F : *M) { // For each function F
 		Type* r = F.getReturnType();
-
+		functionName = F.getName();
 		if (r->isPointerTy()) {
-			printf("Basic Block Size: %d\n", F.getBasicBlockList().size());
+			//printf("Basic Block Size: %d\n", F.getBasicBlockList().size());
 
 
 			set<StringRef> localVar;
@@ -71,7 +70,7 @@ int main(int argc, char **argv) {
 						if(returnValue->hasName()){
 							retPointerName = returnValue->getName();
 
-							printf("Return pointer is %s\n", retPointerName);
+							//printf("Return pointer is %s\n", retPointerName);
 
 							pair<BasicBlock*,StringRef> onlyReturn(lastBB, retPointerName);
 
@@ -79,7 +78,7 @@ int main(int argc, char **argv) {
 
 						} else {
 
-							printf("Return value pointer is %p\n", returnValue);
+							//printf("Return value pointer is %p\n", returnValue);
 
 							getReturn(lastBB, returnValue, &edges,
 									&mutipleReturn);
@@ -99,7 +98,7 @@ int main(int argc, char **argv) {
 					if (i.getOpcode() == Instruction::Alloca) {
 
 						AllocaInst *allocaInstr = dyn_cast<AllocaInst>(&i);
-						printf("%s\n", allocaInstr->getName());
+						//printf("%s\n", allocaInstr->getName());
 						PointerType *allocType = allocaInstr->getType();
 						IntegerType *allocElemType = dyn_cast<IntegerType>(allocType->getElementType());
 						if ( allocElemType->isPointerTy() ) {
@@ -115,8 +114,8 @@ int main(int argc, char **argv) {
 			}
 
 
-			cout << "Size of localPointer: " << localPointer.size() << endl;
-			cout << "Size of localVar: "  << localVar.size() << endl;
+			//cout << "Size of localPointer: " << localPointer.size() << endl;
+			//cout << "Size of localVar: "  << localVar.size() << endl;
 
 
 			set<pair<BasicBlock*,BasicBlock*>> checkEdges;
@@ -124,7 +123,7 @@ int main(int argc, char **argv) {
 			for (auto &x : mutipleReturn) {
 				bool result = check_escape(x.first, x.second, localVar,
 						&checkEdges);
-				cout << "This function escapes? " << result << endl;
+				//cout << "This function escapes? " << result << endl;
 			}
 
 			//bool result = check_escape( lastBB, retPointerName, localVar, &checkEdges);
@@ -194,7 +193,7 @@ bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localVal
 			if (op2 == returnName) {
 				//cout << "wtf!" << endl;
 				if (localValue.find(op1) != localValue.end()) {
-					printf("Return pointer points to local var %s\n", op1);
+					//printf("Return pointer points to local var %s\n", op1);
 
 					errs() << "WARNING: ";
 					if (MDNode *n = i->getMetadata("dbg")) { // Here I is an LLVM instruction
@@ -204,9 +203,9 @@ bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localVal
 						StringRef file = loc.getFilename();
 						StringRef dir = loc.getDirectory();
 						errs() << "Line " << line << " of file " << file.str()
-								<< " in " << dir.str() << ": ";
+								<< " in " << functionName << " in " << dir.str() << ": ";
 					}
-					errs() << "Stack-local variable escape!\n";
+					errs() << "Stack-local variable \'"<< op1 <<"\' escape!\n";
 
 					return true;
 				} else {
@@ -217,7 +216,7 @@ bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localVal
 						StringRef op = getElementPtrInstr->getOperand(0)->getName();
 
 						if (localValue.find(op) != localValue.end()) {
-							printf("Return pointer points to local array %s\n", op);
+							//printf("Return pointer points to local array %s\n", op);
 							errs() << "WARNING: ";
 							if (MDNode *n = i->getMetadata("dbg")) { // Here I is an LLVM instruction
 
@@ -226,18 +225,18 @@ bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localVal
 								StringRef file = loc.getFilename();
 								StringRef dir = loc.getDirectory();
 								errs() << "Line " << line << " of file "
-										<< file.str() << " in " << dir.str()
+										<< file.str() << " in " << functionName <<" in "<< dir.str()
 										<< ": ";
 							}
-							errs() << "Stack-local array escape!\n";
+							errs() << "Stack-local array \'"<< op << "\' escape!\n";
 							return true;
 						}
 
-						printf("Return pointer points to non-local array %s\n", op);
+						//printf("Return pointer points to non-local array %s\n", op);
 
 					}
 
-					printf("Return pointer points to non-local var %s\n", op1);
+					//printf("Return pointer points to non-local var %s\n", op1);
 					return false;
 				}
 			}
