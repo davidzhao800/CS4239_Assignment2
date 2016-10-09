@@ -39,49 +39,64 @@ StringRef functionName;
 int main(int argc, char **argv) {
 	LLVMContext &Context = getGlobalContext();
 	SMDiagnostic Err;
-	Module *M = ParseIRFile(argv[1], Err, Context);
-	if (M == nullptr) {
-		fprintf(stderr, "failed to read IR file %s\n", argv[1]);
-		return 1;
+	Module* modules[argc - 1];
+
+	for (int i = 1; i < argc; i++) {
+
+		Module *M = ParseIRFile(argv[i], Err, Context);
+
+		if (M == nullptr) {
+			fprintf(stderr, "failed to read IR file %s\n", argv[1]);
+			return 1;
+		}
+		modules[i - 1] = M;
 	}
 
-	for (auto &F : *M) { // For each function F
-		Type* r = F.getReturnType();
-		functionName = F.getName();
-		if (r->isPointerTy()) {
-			//printf("Basic Block Size: %d\n", F.getBasicBlockList().size());
+	//Module *M = ParseIRFile(argv[1], Err, Context);
+//	if (M == nullptr) {
+//		fprintf(stderr, "failed to read IR file %s\n", argv[1]);
+//		return 1;
+//	}
+	for (int o = 0; o < argc - 1; o++) {
+		Module* m = modules[o];
+		for (auto &F : *m) { // For each function F
+			Type* r = F.getReturnType();
+			functionName = F.getName();
+			if (r->isPointerTy()) {
+				//printf("Basic Block Size: %d\n", F.getBasicBlockList().size());
 
+				set<StringRef> localVar;
+				set<StringRef> localPointer;
+				Value *returnValue;
+				StringRef retPointerName;
+				BasicBlock *lastBB;
+				set<pair<BasicBlock*, BasicBlock*>> edges;
+				set<pair<BasicBlock*, StringRef>> mutipleReturn;
 
-			set<StringRef> localVar;
-			set<StringRef> localPointer;
-			Value *returnValue;
-			StringRef retPointerName;
-			BasicBlock *lastBB;
-			set<pair<BasicBlock*,BasicBlock*>> edges;
-			set<pair<BasicBlock*, StringRef>> mutipleReturn;
+				for (auto &bb : F) {
+					// get return pointer name
+					for (auto &i : bb) {
+						if (i.getOpcode() == Instruction::Ret) {
+							ReturnInst *retInstr = dyn_cast<ReturnInst>(&i);
+							lastBB = &bb;
+							returnValue = retInstr->getPrevNode()->getOperand(
+									0);
+							if (returnValue->hasName()) {
+								retPointerName = returnValue->getName();
 
-			for (auto &bb : F) {
-				// get return pointer name
-				for (auto &i : bb) {
-					if (i.getOpcode() == Instruction::Ret) {
-						ReturnInst *retInstr = dyn_cast<ReturnInst>(&i);
-						lastBB = &bb;
-						returnValue = retInstr->getPrevNode()->getOperand(0);
-						if(returnValue->hasName()){
-							retPointerName = returnValue->getName();
+								//printf("Return pointer is %s\n", retPointerName);
 
-							//printf("Return pointer is %s\n", retPointerName);
+								pair<BasicBlock*, StringRef> onlyReturn(lastBB,
+										retPointerName);
 
-							pair<BasicBlock*,StringRef> onlyReturn(lastBB, retPointerName);
+								mutipleReturn.insert(onlyReturn);
 
-							mutipleReturn.insert(onlyReturn);
+							} else {
 
-						} else {
+								//printf("Return value pointer is %p\n", returnValue);
 
-							//printf("Return value pointer is %p\n", returnValue);
-
-							getReturn(lastBB, returnValue, &edges,
-									&mutipleReturn);
+								getReturn(lastBB, returnValue, &edges,
+										&mutipleReturn);
 //							cout << "size of returns " << mutipleReturn.size()
 //									<< endl;
 //							for (auto &x : mutipleReturn) {
@@ -89,47 +104,46 @@ int main(int argc, char **argv) {
 //								printf("%p\n", x.first);
 //							}
 
+							}
 						}
+					}
+
+					//get local variable
+					for (auto &i : bb) {
+						if (i.getOpcode() == Instruction::Alloca) {
+
+							AllocaInst *allocaInstr = dyn_cast<AllocaInst>(&i);
+							//printf("%s\n", allocaInstr->getName());
+							PointerType *allocType = allocaInstr->getType();
+							IntegerType *allocElemType = dyn_cast<IntegerType>(
+									allocType->getElementType());
+							if (allocElemType->isPointerTy()) {
+
+								localPointer.insert(allocaInstr->getName());
+							} else {
+								localVar.insert(allocaInstr->getName());
+							}
+
+						}
+
 					}
 				}
 
-				//get local variable
-				for (auto &i : bb) {
-					if (i.getOpcode() == Instruction::Alloca) {
+				//cout << "Size of localPointer: " << localPointer.size() << endl;
+				//cout << "Size of localVar: "  << localVar.size() << endl;
 
-						AllocaInst *allocaInstr = dyn_cast<AllocaInst>(&i);
-						//printf("%s\n", allocaInstr->getName());
-						PointerType *allocType = allocaInstr->getType();
-						IntegerType *allocElemType = dyn_cast<IntegerType>(allocType->getElementType());
-						if ( allocElemType->isPointerTy() ) {
+				set<pair<BasicBlock*, BasicBlock*>> checkEdges;
 
-							localPointer.insert(allocaInstr->getName());
-						} else {
-							localVar.insert(allocaInstr->getName());
-						}
-
-					}
-
+				for (auto &x : mutipleReturn) {
+					bool result = check_escape(x.first, x.second, localVar,
+							&checkEdges);
+					//cout << "This function escapes? " << result << endl;
 				}
+
+				//bool result = check_escape( lastBB, retPointerName, localVar, &checkEdges);
+				//cout << "This function escapes? "  << result << endl;
 			}
-
-
-			//cout << "Size of localPointer: " << localPointer.size() << endl;
-			//cout << "Size of localVar: "  << localVar.size() << endl;
-
-
-			set<pair<BasicBlock*,BasicBlock*>> checkEdges;
-
-			for (auto &x : mutipleReturn) {
-				bool result = check_escape(x.first, x.second, localVar,
-						&checkEdges);
-				//cout << "This function escapes? " << result << endl;
-			}
-
-			//bool result = check_escape( lastBB, retPointerName, localVar, &checkEdges);
-			//cout << "This function escapes? "  << result << endl;
 		}
-
 	}
 	return 0;
 }
