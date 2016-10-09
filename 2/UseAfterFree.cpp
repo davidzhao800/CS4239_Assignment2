@@ -59,32 +59,45 @@ int main(int argc, char **argv) {
 //	}
 	for (int o = 0; o < argc - 1; o++) {
 		Module* m = modules[o];
+		set<StringRef> globalPointers;
+		for ( Module::global_iterator i = m->global_begin(); i!= m->global_end(); i++){
+			GlobalVariable *g = i;
+
+			IntegerType *globalVarType = dyn_cast<IntegerType>(g->getType()->getPointerElementType());
+
+			if( globalVarType->isPointerTy() ) {
+				globalPointers.insert(g->getName());
+			}
+		}
+
 		for (auto &F : *m) { // For each function F
+
 			Type* r = F.getReturnType();
 			functionName = F.getName();
-			if (r->isPointerTy()) {
-				//printf("Basic Block Size: %d\n", F.getBasicBlockList().size());
+			set<StringRef> localVar;
+			set<StringRef> localPointer;
+			Value *returnValue;
+			StringRef retPointerName;
+			BasicBlock *lastBB;
+			set<pair<BasicBlock*, BasicBlock*>> edges;
+			set<pair<BasicBlock*, StringRef>> mutipleReturn;
 
-				set<StringRef> localVar;
-				set<StringRef> localPointer;
-				Value *returnValue;
-				StringRef retPointerName;
-				BasicBlock *lastBB;
-				set<pair<BasicBlock*, BasicBlock*>> edges;
-				set<pair<BasicBlock*, StringRef>> mutipleReturn;
+			//if (r->isPointerTy()) {
+			//printf("Basic Block Size: %d\n", F.getBasicBlockList().size());
 
-				for (auto &bb : F) {
-					// get return pointer name
-					for (auto &i : bb) {
-						if (i.getOpcode() == Instruction::Ret) {
-							ReturnInst *retInstr = dyn_cast<ReturnInst>(&i);
-							lastBB = &bb;
-							returnValue = retInstr->getPrevNode()->getOperand(
-									0);
+			for (auto &bb : F) {
+
+				// get return pointer name
+				for (auto &i : bb) {
+					if (i.getOpcode() == Instruction::Ret) {
+						ReturnInst *retInstr = dyn_cast<ReturnInst>(&i);
+						lastBB = &bb;
+						if (r->isPointerTy()) {
+							returnValue = retInstr->getPrevNode()->getOperand(0);
 							if (returnValue->hasName()) {
 								retPointerName = returnValue->getName();
 
-								//printf("Return pointer is %s\n", retPointerName);
+								//printf("Return pointer is %s\n",retPointerName);
 
 								pair<BasicBlock*, StringRef> onlyReturn(lastBB,
 										retPointerName);
@@ -97,51 +110,73 @@ int main(int argc, char **argv) {
 
 								getReturn(lastBB, returnValue, &edges,
 										&mutipleReturn);
-//							cout << "size of returns " << mutipleReturn.size()
-//									<< endl;
-//							for (auto &x : mutipleReturn) {
-//								printf("%s\n", x.second);
-//								printf("%p\n", x.first);
-//							}
+								//							cout << "size of returns " << mutipleReturn.size()
+								//									<< endl;
+								//							for (auto &x : mutipleReturn) {
+								//								printf("%s\n", x.second);
+								//								printf("%p\n", x.first);
+								//							}
 
 							}
 						}
-					}
-
-					//get local variable
-					for (auto &i : bb) {
-						if (i.getOpcode() == Instruction::Alloca) {
-
-							AllocaInst *allocaInstr = dyn_cast<AllocaInst>(&i);
-							//printf("%s\n", allocaInstr->getName());
-							PointerType *allocType = allocaInstr->getType();
-							IntegerType *allocElemType = dyn_cast<IntegerType>(
-									allocType->getElementType());
-							if (allocElemType->isPointerTy()) {
-
-								localPointer.insert(allocaInstr->getName());
-							} else {
-								localVar.insert(allocaInstr->getName());
-							}
-
-						}
 
 					}
+
 				}
 
+				//get local variable
+				for (auto &i : bb) {
+					if (i.getOpcode() == Instruction::Alloca) {
+
+						AllocaInst *allocaInstr = dyn_cast<AllocaInst>(&i);
+						//printf("%s\n", allocaInstr->getName());
+						PointerType *allocType = allocaInstr->getType();
+						IntegerType *allocElemType = dyn_cast<IntegerType>(
+								allocType->getElementType());
+						if (allocElemType->isPointerTy()) {
+
+							localPointer.insert(allocaInstr->getName());
+						} else {
+							localVar.insert(allocaInstr->getName());
+						}
+
+					}
+
+				}
+
+			}
+
+//			for(Function::arg_iterator k = F.arg_begin(); k != F.arg_end(); k++){
+//				Argument *a = k;
+//				if (a->getType()->isPointerTy()){
+//					cout << "heiheiheiehiehei" << endl;
+//					pair<BasicBlock*, StringRef> argPointer(lastBB, a->getName());
+//					mutipleReturn.insert(argPointer);
+//				}
+//			}
 				//cout << "Size of localPointer: " << localPointer.size() << endl;
 				//cout << "Size of localVar: "  << localVar.size() << endl;
 
-				set<pair<BasicBlock*, BasicBlock*>> checkEdges;
 
-				for (auto &x : mutipleReturn) {
-					bool result = check_escape(x.first, x.second, localVar,
-							&checkEdges);
-					//cout << "This function escapes? " << result << endl;
-				}
 
 				//bool result = check_escape( lastBB, retPointerName, localVar, &checkEdges);
 				//cout << "This function escapes? "  << result << endl;
+			//}
+
+			for (StringRef x : globalPointers) {
+
+				//printf("%s    %p\n", x, lastBB);
+				pair<BasicBlock*, StringRef> globalVar(lastBB, x);
+				mutipleReturn.insert(globalVar);
+			}
+
+			for (auto &x : mutipleReturn) {
+				set<pair<BasicBlock*, BasicBlock*>> checkEdges;
+
+				//printf("%s    %p\n",x.second, x.first);
+				bool result = check_escape(x.first, x.second, localVar,
+						&checkEdges);
+				//cout << "This function escapes? " << result << endl;
 			}
 		}
 	}
