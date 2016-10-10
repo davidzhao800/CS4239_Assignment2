@@ -1,0 +1,6 @@
+char *globalptr;
+void escape_local2(char **argptr, char *aChar, int aInt) {
+	char local_char = 'a';
+	globalptr = &local_char;
+	*argptr = &local_char;
+}

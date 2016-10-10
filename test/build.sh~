@@ -1,0 +1,5 @@
+#!/bin/bash
+
+clang++ -std=c++11 -o BadCast BadCast.cpp `llvm-config --cxxflags` `llvm-config --ldflags` `llvm-config --libs` -lpthread -lncurses -ldl
+clang++ -std=c++11 -o StringLiteralWrite StringLiteralWrite.cpp `llvm-config --cxxflags` `llvm-config --ldflags` `llvm-config --libs` -lpthread -lncurses -ldl
+clang -g -S -emit-llvm -c example/*.c
