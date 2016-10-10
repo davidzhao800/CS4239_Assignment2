@@ -27,6 +27,7 @@ int main(int argc, char* argv[]) {
 		reader.traverseAll();
 		ed.setModule(reader.getModule());
 		std::cout << "==================Escape Detect=================" << std::endl;
-		ed.detectEscape();
+		ed.runDFS();
 	}
+	return 0;
 }
