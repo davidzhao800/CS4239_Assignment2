@@ -149,6 +149,13 @@ int main(int argc, char **argv) {
 				}
 
 			}
+			//cout << localVar.size() << endl;
+			for (auto &x : localVar ) {
+				if(x.empty()){
+					localVar.erase(localVar.find(x));
+				}
+			}
+			//cout << localVar.size() << endl;
 
 			for(Function::arg_iterator k = F.arg_begin(); k != F.arg_end(); k++){
 				Argument *a = k;
