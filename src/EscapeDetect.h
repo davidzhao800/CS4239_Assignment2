@@ -29,24 +29,25 @@ private:
 	typedef DenseMap<const BasicBlock*, Color> BBColorMap;
 	typedef DenseMap<Value*, Instruction*> VIMap;
 	VIMap valueToInstruction;
-	set<Value*> globalVars;
-	set<Value*> arguments;
 	Module *module;
 	
 	bool isLocalInstruction(Instruction);
-	void doBasicBlock(BasicBlock *BB, set<Value*> *localVar);
+	void doBasicBlock(BasicBlock *BB, set<Value*> *localVar, set<Value*> *globalVars, set<Value*> *arguments);
 	bool isReturnBlock(BasicBlock *BB);
-	bool checkGlobalVarEscape(set<Value*> *localVar, StoreInst *storeInst);
+	bool checkGlobalVarEscape(set<Value*> *localVar, set<Value*> *globalVars, StoreInst *storeInst);
+	bool checkArgumentEscape(set<Value*> *localVar, set<Value*> *arguments, StoreInst *storeInst);
 	bool checkLocalVar(set<Value*> *localVar, StoreInst *storeInst);
-	bool checkGlobalVar(set<Value*> *localVar, StoreInst *storeInst);
+	bool checkGlobalVar(set<Value*> *localVar, set<Value*> *globalVars, StoreInst *storeInst);
+	bool checkArguments(set<Value*> *localVar, set<Value*> *arguments, StoreInst *storeInst);
 	bool isInSet(Value* aValue, set<Value*> *aValueSet);
+	bool isPointerToPointer(const Value* V);
 	void printReport(Instruction* inst, string msg);
 public:
 	EscapeDetect();
 	void setModule(Module *aModule);
 	void detectEscape();
 	void runDFS();
-	void recursiveDFSToposort(BasicBlock *BB, set<Value*> localVar, BBColorMap ColorMap);
+	void recursiveDFSToposort(BasicBlock *BB, set<Value*> localVar, set<Value*> globalVars, set<Value*> arguments, BBColorMap ColorMap);
 };
 #endif
 
