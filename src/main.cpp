@@ -23,11 +23,9 @@ int main(int argc, char* argv[]) {
 	//std::cout << "Success set IR file name!" << std::endl;
 	int success = reader.readIRFiles();
 	if (success) {
-		std::cout << "=====================Traverse===================" << std::endl;
-		reader.traverseAll();
-		ed.setModule(reader.getModule());
+		ed.setModuleSet(reader.getModuleSet());
 		std::cout << "==================Escape Detect=================" << std::endl;
-		ed.runDFS();
+		ed.detectEscape();
 	}
 	return 0;
 }

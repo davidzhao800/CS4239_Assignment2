@@ -14,22 +14,23 @@
 #include "llvm/Support/SourceMgr.h"
 #include "Messages.h"
 #include <vector>
+#include <set>
 #include <string>
 #include <iostream>
 
 #ifndef IRReader_H
 #define IRReader_H
+using namespace llvm;
 class IRReader {
 private:
-	llvm::LLVMContext &Context = llvm::getGlobalContext();
-	llvm::SMDiagnostic Err;
-	std::vector<std::string> fileNames;
-	llvm::Module *module;
+	LLVMContext &Context = getGlobalContext();
+	SMDiagnostic Err;
+	vector<string> fileNames;
+	set<Module*> moduleSet;
 public:
 	IRReader();
-	void setIRFileNames(std::vector<std::string> aFileNames);
+	void setIRFileNames(vector<string> aFileNames);
 	int readIRFiles();
-	llvm::Module *getModule();
-	void traverseAll();
+	set<Module*> getModuleSet();
 };
 #endif

@@ -4,19 +4,21 @@ EscapeDetect::EscapeDetect() {
 	VIMap valueToInstruction = VIMap();
 }
 
-void EscapeDetect::setModule(Module *aModule) {
-	module = aModule;
+void EscapeDetect::setModuleSet(set<Module*> aModuleSet) {
+	moduleSet = aModuleSet;
 }
 
-bool EscapeDetect::isLocalInstruction(Instruction i) {
-	return false;
+void EscapeDetect::detectEscape() {
+	for (auto& module : moduleSet) {
+		runDFS(module);	
+	}
 }
 
-void EscapeDetect::runDFS() {
+void EscapeDetect::runDFS(Module * module) {
 	outs() << " Running DFS...\n";
 	outs() << " Testing global variables...\n";
 	set<Value*> globalVars;
-	for (Module::global_iterator i = module->global_begin(); i!= module->global_end(); i++){	
+	for (Module::global_iterator i = module->global_begin(); i!= module->global_end(); i++)	{	
 		GlobalVariable *g = i;
 		if(isa<PointerType>(g->getType())) {
 			outs() << g->getName() << " is a pointer\n" ;

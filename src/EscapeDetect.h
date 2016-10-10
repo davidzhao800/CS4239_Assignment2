@@ -29,7 +29,7 @@ private:
 	typedef DenseMap<const BasicBlock*, Color> BBColorMap;
 	typedef DenseMap<Value*, Instruction*> VIMap;
 	VIMap valueToInstruction;
-	Module *module;
+	set<Module*> moduleSet;
 	
 	bool isLocalInstruction(Instruction);
 	void doBasicBlock(BasicBlock *BB, set<Value*> *localVar, set<Value*> *globalVars, set<Value*> *arguments);
@@ -44,9 +44,9 @@ private:
 	void printReport(Instruction* inst, string msg);
 public:
 	EscapeDetect();
-	void setModule(Module *aModule);
+	void setModuleSet(set<Module*> aModuleSet);
 	void detectEscape();
-	void runDFS();
+	void runDFS(Module * module);
 	void recursiveDFSToposort(BasicBlock *BB, set<Value*> localVar, set<Value*> globalVars, set<Value*> arguments, BBColorMap ColorMap);
 };
 #endif
