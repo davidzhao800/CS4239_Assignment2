@@ -3,3 +3,6 @@ Debug/
 .settings/
 .project
 2/tests/*.ll
+bin/
+build/
+test/
