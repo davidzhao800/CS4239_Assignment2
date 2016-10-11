@@ -19,6 +19,7 @@ void EscapeDetect::detectEscape() {
 void EscapeDetect::runDFS(Module * module) {
 	//outs() << " Running DFS...\n";
 	//outs() << " Testing global variables...\n";
+	outs() << "============Processing " << module->getModuleIdentifier() << "===========\n";
 	set<Value*> globalVars;
 	for (Module::global_iterator i = module->global_begin(); i!= module->global_end(); i++)	{	
 		GlobalVariable *g = i;
@@ -33,8 +34,8 @@ void EscapeDetect::runDFS(Module * module) {
 			//outs() << " This is a function declaration\n";
 			continue;
 		}
+		outs() << "Processing " << F.getName() << "...\n";
 		functionName = F.getName();
-		outs() << "============Processing " << F.getName() << "===========\n";
 		set<Value*> arguments;
 		//outs() << " Testing function arguments...\n";
 		for (auto &arg : F.getArgumentList()) {
@@ -51,6 +52,7 @@ void EscapeDetect::runDFS(Module * module) {
       		ColorMap[I] = EscapeDetect::WHITE;
     	}
 		recursiveDFSToposort(&F.getEntryBlock(), localVarSet, globalVars, arguments, ColorMap);
+		outs() << F.getName() << " done.\n";
 	}
 }
 
