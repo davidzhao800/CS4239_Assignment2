@@ -149,11 +149,18 @@ int main(int argc, char **argv) {
 				}
 
 			}
+			//cout << localVar.size() << endl;
+			for (auto &x : localVar ) {
+				if(x.empty()){
+					localVar.erase(localVar.find(x));
+				}
+			}
+			//cout << localVar.size() << endl;
 
 			for(Function::arg_iterator k = F.arg_begin(); k != F.arg_end(); k++){
 				Argument *a = k;
 				if (a->getType()->isPointerTy() && a->getType()->getContainedType(0)->isPointerTy()){
-					cout << "heiheiheiehiehei" << endl;
+
 					pair<BasicBlock*, StringRef> argPointer(lastBB, a->getName());
 					bonus.insert(argPointer);
 				}
@@ -327,7 +334,7 @@ bool check_arg_ptr(BasicBlock* firstBB, BasicBlock* bb, StringRef argName, set<S
 			StringRef op2 = storeInstr->getOperand(1)->getName();
 
 			if (op1 == argName) {
-				cout << "found store **%argptr ***%1!" << endl;
+				//cout << "found store **%argptr ***%1!" << endl;
 				//get %1
 				intermediate = storeInstr->getOperand(1);
 			}
