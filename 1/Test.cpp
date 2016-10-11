@@ -76,15 +76,21 @@ Function* getFunctionByName(Module* modules[], std::string name, int length){
 }
 
 void checkUnusedFunction(Module* modules[], int length, std::set<Function*> *checked){
+	printf("\n------Unused Function Result------\n");		
+	bool empty = true;		
 	for (int i = 0; i < length; i++){
 		Module* m = modules[i];
 		for (auto &f: *m){
 			if (f.empty()) continue;
 			if (checked->find(&f) == checked->end()){
+				empty = false;
 				printf("Unused function %s found in Module %s\n"
 						,f.getName().str().c_str(), arg_v[i+1]);
 			}
 		}
+	}
+	if (empty){
+		printf("No Unused Function Found!\n");		
 	}
 }
 
@@ -109,16 +115,16 @@ void processFunction(Module* modules[], std::set<Function*> *pending, std::set<F
 
 				if (Call != nullptr){
 					Function *G = Call->getCalledFunction();
-					if (G == nullptr) {
-						if (prev!=nullptr){
-							LoadInst *L = dyn_cast<LoadInst>(prev);
-							if (L != nullptr){
-								printf("Operand 0 = %s\n", L->getOperand(0)->getName().str().c_str());
-								std::set<std::string> res = traceback(L);
-								for (std::set<std::string>::iterator it = res.begin(); it!=res.end();it++){
-									
-									Function* curr = getFunctionByName(modules,*it,arg_c-1);
-									if (curr!=nullptr){
+					if (G == nullptr && prev!=nullptr) {
+
+						LoadInst *L = dyn_cast<LoadInst>(prev);
+						if (L != nullptr){
+							printf("Operand 0 = %s\n", L->getOperand(0)->getName().str().c_str());
+							std::set<std::string> res = traceback(L);
+							for (std::set<std::string>::iterator it = res.begin(); it!=res.end();it++){
+
+								Function* curr = getFunctionByName(modules,*it,arg_c-1);
+								if (curr!=nullptr){
 									bool shouldAdd = true;
 									if (checked->find(curr) != checked->end()){
 										printf("funciton %s found in checked!\n", (curr)->getName().str().c_str());
@@ -132,12 +138,12 @@ void processFunction(Module* modules[], std::set<Function*> *pending, std::set<F
 										printf("inserting %s into pending!\n", curr->getName().str().c_str());
 										pending->insert(curr);
 									}	
-									}
 								}
 							}
 						}
+
 					}	
-					else{
+					else if (G != nullptr){
 						bool shouldAdd = true;						
 						if (checked->find(G) != checked->end()){
 							printf("funciton %s found in checked!\n", G->getName().str().c_str());
@@ -158,7 +164,7 @@ void processFunction(Module* modules[], std::set<Function*> *pending, std::set<F
 			}
 			prev = nullptr;
 		}
-		
+
 
 		checked->insert(f);
 		pending->erase(f);
@@ -200,7 +206,14 @@ int main(int argc, char **argv){
 	arg_v = argv;
 	arg_c = argc;
 
-	pending.insert(getFunctionByName(modules,"main",argc-1));
+	Function* mainFunction = getFunctionByName(modules,"main",argc-1);
+	if (mainFunction == nullptr){
+		printf("Since main function is not found, all functions are dead\n");
+		printf("Program exiting\n");		
+		return 0;
+	}
+
+	pending.insert(mainFunction);
 
 	while (pending.size()!=0){
 		processFunction(modules, &pending, &checked);
@@ -212,37 +225,37 @@ int main(int argc, char **argv){
 	checkUnusedFunction(modules, argc-1, &checked);
 
 	/*	
-		getFunctionByName(modules,"f",argc-1);
-		getFunctionByName(modules,"Alloha!",argc-1);
+			getFunctionByName(modules,"f",argc-1);
+			getFunctionByName(modules,"Alloha!",argc-1);
 
-		Module *M = modules[0];
+			Module *M = modules[0];
 
-		Function *f = M->getFunction("f");
-		if (f==nullptr) printf("f not found\n");
-		else printf("f name %s\n", f->getName().str().c_str());
+			Function *f = M->getFunction("f");
+			if (f==nullptr) printf("f not found\n");
+			else printf("f name %s\n", f->getName().str().c_str());
 
-		for (auto &F: *M)
-	// For each function F
-	for (auto &BB: F){ // For each basic block BB
-	BasicBlock* pre = BB.getSinglePredecessor();
-	if (pre!=nullptr){
-	printf("Name = %s\n", pre->getName().str().c_str());
-	}
+			for (auto &F: *M)
+		// For each function F
+		for (auto &BB: F){ // For each basic block BB
+		BasicBlock* pre = BB.getSinglePredecessor();
+		if (pre!=nullptr){
+		printf("Name = %s\n", pre->getName().str().c_str());
+		}
 
-	for (auto &I: BB) {// For each instruction I
+		for (auto &I: BB) {// For each instruction I
 
-	CallInst *Call = dyn_cast<CallInst>(&I);
-	if (Call == nullptr) continue;
-	Function *G = Call->getCalledFunction();
-	if (G == nullptr) continue;
-	printf("Name = %s\n", G->getName().str().c_str());
+		CallInst *Call = dyn_cast<CallInst>(&I);
+		if (Call == nullptr) continue;
+		Function *G = Call->getCalledFunction();
+		if (G == nullptr) continue;
+		printf("Name = %s\n", G->getName().str().c_str());
 
 
-	BranchInst *Branch = dyn_cast<BranchInst>(&I);
-	if (Branch == nullptr) continue;
-	printf("%d\n",Branch->isConditional());
+		BranchInst *Branch = dyn_cast<BranchInst>(&I);
+		if (Branch == nullptr) continue;
+		printf("%d\n",Branch->isConditional());
 
-	}
-	}
+		}
+		}
 	 */
 }
