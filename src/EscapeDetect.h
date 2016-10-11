@@ -30,7 +30,9 @@ private:
 	typedef DenseMap<Value*, Instruction*> VIMap;
 	VIMap valueToInstruction;
 	set<Module*> moduleSet;
+	set<Instruction*> errorInstructions;
 	
+	StringRef functionName;
 	bool isLocalInstruction(Instruction);
 	void doBasicBlock(BasicBlock *BB, set<Value*> *localVar, set<Value*> *globalVars, set<Value*> *arguments);
 	bool isReturnBlock(BasicBlock *BB);
@@ -39,9 +41,14 @@ private:
 	bool checkLocalVar(set<Value*> *localVar, StoreInst *storeInst);
 	bool checkGlobalVar(set<Value*> *localVar, set<Value*> *globalVars, StoreInst *storeInst);
 	bool checkArguments(set<Value*> *localVar, set<Value*> *arguments, StoreInst *storeInst);
-	bool isInSet(Value* aValue, set<Value*> *aValueSet);
+	//bool isInSet(Value* aValue, set<Value*> *aValueSet);
 	bool isPointerToPointer(const Value* V);
 	void printReport(Instruction* inst, string msg);
+	template<class TypeA>
+	bool isInSet(TypeA* aTypeA, set<TypeA*> *aTypeASet) {
+		bool result = aTypeASet->find(aTypeA) != aTypeASet->end();
+		return result;
+	}
 public:
 	EscapeDetect();
 	void setModuleSet(set<Module*> aModuleSet);

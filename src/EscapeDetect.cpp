@@ -2,6 +2,7 @@
 
 EscapeDetect::EscapeDetect() {
 	VIMap valueToInstruction = VIMap();
+	set<Instruction*> errorInstructions = set<Instruction*>();
 }
 
 void EscapeDetect::setModuleSet(set<Module*> aModuleSet) {
@@ -9,31 +10,33 @@ void EscapeDetect::setModuleSet(set<Module*> aModuleSet) {
 }
 
 void EscapeDetect::detectEscape() {
+	outs() << "Detecting Escapes...\n";
 	for (auto& module : moduleSet) {
 		runDFS(module);	
 	}
 }
 
 void EscapeDetect::runDFS(Module * module) {
-	outs() << " Running DFS...\n";
-	outs() << " Testing global variables...\n";
+	//outs() << " Running DFS...\n";
+	//outs() << " Testing global variables...\n";
 	set<Value*> globalVars;
 	for (Module::global_iterator i = module->global_begin(); i!= module->global_end(); i++)	{	
 		GlobalVariable *g = i;
 		if(isa<PointerType>(g->getType())) {
-			outs() << g->getName() << " is a pointer\n" ;
+			//outs() << g->getName() << " is a pointer\n" ;
 			globalVars.insert(g);
 		}
 	}
-	outs() << " Global variables done.\n";
+	//outs() << " Global variables done.\n";
 	for (auto &F: *module) {
 		if (F.isDeclaration()) {
 			//outs() << " This is a function declaration\n";
 			continue;
 		}
+		functionName = F.getName();
 		outs() << "============Processing " << F.getName() << "===========\n";
 		set<Value*> arguments;
-		outs() << " Testing function arguments...\n";
+		//outs() << " Testing function arguments...\n";
 		for (auto &arg : F.getArgumentList()) {
 			if(isPointerToPointer(&arg)) {
 				
@@ -41,7 +44,7 @@ void EscapeDetect::runDFS(Module * module) {
 				arguments.insert(&arg);
 			}
 		}
-		outs() << " Function arguments done.\n";
+		//outs() << " Function arguments done.\n";
 		set<Value*> localVarSet;
 		BBColorMap ColorMap;
 		for (Function::const_iterator I = F.begin(), IE = F.end(); I != IE; ++I) {
@@ -91,7 +94,7 @@ void EscapeDetect::doBasicBlock(BasicBlock *BB,
 			//outs() << "-Return value is: " << returnValue << "\n";
 			
 			if (isInSet(returnValue, localVar)) {
-				printReport(&I, "Escapes from return value.");			
+				printReport(&I, "Escapes from return value. Variable escaped is \'" + returnValue->getName().str() + "\'");			
 			}
 		} else if (isa<StoreInst>(I)) {
 			bool success = false;
@@ -140,7 +143,7 @@ bool EscapeDetect::checkGlobalVarEscape(set<Value*> *localVar, set<Value*> *glob
 	
 	if (isInSet(dst, globalVars) &&
 		isInSet(src, localVar)) {
-		printReport(storeInst, "Escapes from global varibale.");
+		printReport(storeInst, "Escapes from global varibale. Variable escaped is \'" + src->getName().str() + "\'");
 		return true;
 	} else {
 		return false;
@@ -168,7 +171,7 @@ bool EscapeDetect::checkArgumentEscape(set<Value*> *localVar, set<Value*> *argum
 	}
 
 	if (isInSet(dst, arguments)) {
-		printReport(storeInst, "Escapes from function arguments.");
+		printReport(storeInst, "Escapes from function arguments. Variable escaped is \'" + src->getName().str() + "\'");
 		return true;
 	} else {
 		return false;
@@ -244,12 +247,11 @@ bool EscapeDetect::checkArguments(set<Value*> *localVar, set<Value*> *arguments,
 	return false;
 }
 
-bool EscapeDetect::isInSet(Value* aValue, set<Value*> *aValueSet) {
-	bool result = aValueSet->find(aValue) != aValueSet->end();
-	return result;
-}
-
 void EscapeDetect::printReport(Instruction* inst, string message) {
+	if (isInSet(inst, &errorInstructions)) {
+		return;
+	}
+	errorInstructions.insert(inst);
 	errs() << "WARNING: ";
     if (MDNode *n = inst->getMetadata("dbg")) {
 		DILocation loc(n);
@@ -257,7 +259,7 @@ void EscapeDetect::printReport(Instruction* inst, string message) {
         StringRef file = loc.getFilename();
         StringRef dir = loc.getDirectory();
         errs() << "Line " << line << " of file " << file.str()
-         << " in " << dir.str() << ": ";
+         << " in " << dir.str() << " in fucntion " << functionName <<": ";
     }
     errs() << message << "\n";
 }

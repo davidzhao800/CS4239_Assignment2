@@ -9,6 +9,7 @@ void IRReader::setIRFileNames(std::vector<std::string> aFileNames) {
 }
 
 int IRReader::readIRFiles() {
+	cout << "Reading Files...." << endl;
 	for (auto& filename : fileNames) {
 		string message = Messages::formatMessage
 			(Messages::IRREADER_READ_FILE, filename);

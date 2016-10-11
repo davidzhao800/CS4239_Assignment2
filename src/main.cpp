@@ -24,7 +24,6 @@ int main(int argc, char* argv[]) {
 	int success = reader.readIRFiles();
 	if (success) {
 		ed.setModuleSet(reader.getModuleSet());
-		std::cout << "==================Escape Detect=================" << std::endl;
 		ed.detectEscape();
 	}
 	return 0;
