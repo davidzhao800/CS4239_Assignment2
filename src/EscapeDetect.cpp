@@ -1,8 +1,8 @@
 #include "EscapeDetect.h"
 
 EscapeDetect::EscapeDetect() {
-	VIMap valueToInstruction = VIMap();
 	set<Instruction*> errorInstructions = set<Instruction*>();
+	counter = 0;
 }
 
 void EscapeDetect::setModuleSet(set<Module*> aModuleSet) {
@@ -14,6 +14,7 @@ void EscapeDetect::detectEscape() {
 	for (auto& module : moduleSet) {
 		runDFS(module);	
 	}
+	outs() << "Total Number of Errors: " << counter << "\n";
 }
 
 void EscapeDetect::runDFS(Module * module) {
@@ -34,8 +35,8 @@ void EscapeDetect::runDFS(Module * module) {
 			//outs() << " This is a function declaration\n";
 			continue;
 		}
-		outs() << "Processing " << F.getName() << "...\n";
 		functionName = F.getName();
+		outs() << "Processing " << functionName << "...\n";
 		AliasMap argumentsAliasMap;
 		//outs() << " Testing function arguments...\n";
 		for (auto &arg : F.getArgumentList()) {
@@ -48,27 +49,28 @@ void EscapeDetect::runDFS(Module * module) {
 		//outs() << " Function arguments done.\n";
 		AliasMap localAliasMap = AliasMap();
 		BBColorMap ColorMap;
+		VIMap valueToInst;
 		for (Function::const_iterator I = F.begin(), IE = F.end(); I != IE; ++I) {
       		ColorMap[I] = EscapeDetect::WHITE;
     	}
-		recursiveDFSToposort(&F.getEntryBlock(), localAliasMap, globalAliasMap, argumentsAliasMap, ColorMap);
+		recursiveDFSToposort(&F.getEntryBlock(), localAliasMap, globalAliasMap, argumentsAliasMap, valueToInst, ColorMap);
 		//outs() << F.getName() << " done.\n";
 	}
 }
 
 void EscapeDetect::recursiveDFSToposort(BasicBlock *BB, 
-	AliasMap localAliasMap,  AliasMap globalAliasMap, AliasMap argumentsAliasMap, BBColorMap ColorMap) {
+	AliasMap localAliasMap,  AliasMap globalAliasMap, AliasMap argumentsAliasMap, VIMap valueToInst, BBColorMap ColorMap) {
 	if (!isReturnBlock(BB)) {
 		ColorMap[BB] = EscapeDetect::GREY;
 	}
-	doBasicBlock(BB, &localAliasMap, &globalAliasMap, &argumentsAliasMap);
+	doBasicBlock(BB, &localAliasMap, &globalAliasMap, &argumentsAliasMap, &valueToInst);
 	TerminatorInst *TInst = BB->getTerminator();
 	for (unsigned I = 0, NSucc = TInst->getNumSuccessors(); I < NSucc; ++I) {
       BasicBlock *Succ = TInst->getSuccessor(I);
       Color SuccColor = ColorMap[Succ];
       if (SuccColor == EscapeDetect::WHITE ||
 			(SuccColor == EscapeDetect::GREY && NSucc == 1)) {
-        recursiveDFSToposort(Succ, localAliasMap, globalAliasMap, argumentsAliasMap, ColorMap);
+        recursiveDFSToposort(Succ, localAliasMap, globalAliasMap, argumentsAliasMap, valueToInst, ColorMap);
       }
     }
     // This BB is finished (fully explored)
@@ -78,17 +80,17 @@ void EscapeDetect::recursiveDFSToposort(BasicBlock *BB,
 }
 
 void EscapeDetect::doBasicBlock(BasicBlock *BB,
-	AliasMap *localAliasMap,  AliasMap *globalAliasMap, AliasMap *argumentsAliasMap) {
+	AliasMap *localAliasMap,  AliasMap *globalAliasMap, AliasMap *argumentsAliasMap, VIMap *valueToInst) {
 	for (auto &I : *BB) {
 		//outs() << "--------Do Instruction " << &I << "---------\n";
 		if (isa<ReturnInst>(I)) {
 			//outs() << "Processing return instruction\n";
 			ReturnInst *returnInst = dyn_cast<ReturnInst>(&I);
-			handleReturnInst(returnInst, localAliasMap);
+			handleReturnInst(returnInst, localAliasMap, valueToInst);
 		} else if (isa<StoreInst>(I)) {
 			//outs() << "Processing store instruction\n";
 			StoreInst *storeInst = dyn_cast<StoreInst>(&I);
-			handleStoreInst(storeInst, localAliasMap, globalAliasMap, argumentsAliasMap);
+			handleStoreInst(storeInst, localAliasMap, globalAliasMap, argumentsAliasMap, valueToInst);
 		} else if (isa<AllocaInst>(I)) {
 			//outs() << "Processing alloca instruction\n";
 			AllocaInst *allocaInst = dyn_cast<AllocaInst>(&I);
@@ -97,15 +99,15 @@ void EscapeDetect::doBasicBlock(BasicBlock *BB,
 			//outs() << "Processing load instruction\n";
 			LoadInst *loadInst = dyn_cast<LoadInst>(&I);
 			handleLoadInst(loadInst, localAliasMap, globalAliasMap, argumentsAliasMap);
-		} else if (isa<GEPOperator>(I)) {
+		} else if (isa<GetElementPtrInst>(I)) {
 			//outs() << "Processing gep instruction\n";
-			GEPOperator *GEPInst = dyn_cast<GEPOperator>(&I);
-			handleGEPInst(GEPInst, localAliasMap, globalAliasMap, argumentsAliasMap);			
+			GetElementPtrInst *GEPInst = dyn_cast<GetElementPtrInst>(&I);
+			handleGEPInst(GEPInst, localAliasMap, globalAliasMap, argumentsAliasMap, valueToInst);			
 		}
 	}
 }
 
-void EscapeDetect::handleReturnInst(ReturnInst *returnInst, AliasMap *localAliasMap) {
+void EscapeDetect::handleReturnInst(ReturnInst *returnInst, AliasMap *localAliasMap, VIMap *valueToInst) {
 	Value *returnValue = returnInst->getReturnValue();
 	if (returnValue == nullptr) {
 		//outs() << "The return value is void\n";	
@@ -117,15 +119,26 @@ void EscapeDetect::handleReturnInst(ReturnInst *returnInst, AliasMap *localAlias
 	returnValue = returnInst->getPrevNode()->getOperand(0);
 	if (isInMap(returnValue, localAliasMap)) {
 		AliasMap &aReference = *localAliasMap;
-		StringRef varName = aReference[returnValue]->getName();
-		printReport(returnInst, "Escapes from return value. Variable escaped is \'" + varName.str() + "\'");
+		Value *varValue = aReference[returnValue];
+		if (varValue == nullptr) {
+			outs() << "returnvalue wtf\n";
+			return;
+		}
+		StringRef varName = varValue->getName();
+		VIMap &bReference = *valueToInst;
+		Instruction *escapeInst = bReference[varValue];
+		if (escapeInst == nullptr) {
+			outs() << "wtf\n";
+		} else {
+			printReport(escapeInst, "Causing escape from return value. Variable escaped is \'" + varName.str() + "\'");
+		}
 	}
 }
 
 void EscapeDetect::handleStoreInst(StoreInst *storeInst,
-	AliasMap *localAliasMap,  AliasMap *globalAliasMap, AliasMap *argumentsAliasMap) {
+	AliasMap *localAliasMap, AliasMap *globalAliasMap, AliasMap *argumentsAliasMap, VIMap *valueToInst) {
 	bool success = false;
-	if (!success)			
+	if (!success)
 		success = success || checkGlobalVarEscape(localAliasMap, globalAliasMap, storeInst);
 	if (!success)
 		success = success || checkArgumentEscape(localAliasMap, argumentsAliasMap, storeInst);
@@ -135,6 +148,17 @@ void EscapeDetect::handleStoreInst(StoreInst *storeInst,
 		success = success || checkLocalVar(localAliasMap, globalAliasMap, argumentsAliasMap, storeInst);
 	if (!success)
 		success = success || checkArguments(localAliasMap, globalAliasMap, argumentsAliasMap, storeInst);
+	
+	Value *dst = storeInst->getOperand(1);
+	if (isInMap(dst, globalAliasMap)) {
+		dst = globalAliasMap->lookup(dst);			
+	} else if (isInMap(dst, argumentsAliasMap)) {
+		dst = argumentsAliasMap->lookup(dst);
+	} else if (isInMap(dst, localAliasMap)) {
+		dst = localAliasMap->lookup(dst);
+	}
+	VIMap &ref = *valueToInst;
+	ref[dst] = storeInst;
 }
 
 void EscapeDetect::handleAllocaInst(AllocaInst *allocaInst, AliasMap *localAliasMap) {
@@ -157,18 +181,26 @@ void EscapeDetect::handleLoadInst(LoadInst *loadInst, AliasMap *localAliasMap, A
 		addToMap(argumentsAliasMap, dst, src);
 	}
 }
-void EscapeDetect::handleGEPInst(GEPOperator *gepInst, AliasMap *localAliasMap, AliasMap *globalAliasMap, AliasMap *argumentsAliasMap)
+void EscapeDetect::handleGEPInst(GetElementPtrInst *gepInst, AliasMap *localAliasMap, AliasMap *globalAliasMap, AliasMap *argumentsAliasMap, VIMap *valueToInst)
 {
 	Value *src = gepInst->getOperand(0);
 	Value *dst = gepInst;
-
+	Value* varModified;
+	
 	if (isInMap(src, localAliasMap)) {
 		addToMap(localAliasMap, dst, src);
+		varModified = localAliasMap->lookup(dst);
 	} else if (isInMap(src, globalAliasMap)) {
 		addToMap(globalAliasMap, dst, src);
+		varModified = globalAliasMap->lookup(dst);
 	} else if (isInMap(src, argumentsAliasMap)) {
 		addToMap(argumentsAliasMap, dst, src);
+		varModified = argumentsAliasMap->lookup(dst);
 	}
+	
+	VIMap &ref = *valueToInst;
+	ref[varModified] = gepInst;
+	//outs() << "done\n";
 }
 
 
@@ -190,7 +222,7 @@ bool EscapeDetect::checkGlobalVarEscape(AliasMap *localAliasMap, AliasMap *globa
 		isInMap(dst, globalAliasMap)) {
 		AliasMap &aReference = *localAliasMap;
 		StringRef varName = aReference[src]->getName();
-		printReport(storeInst, "Escapes from global varibale. Variable escaped is \'" + varName.str() + "\'");
+		printReport(storeInst, "Causing escape from global varibale. Variable escaped is \'" + varName.str() + "\'");
 		return true;
 	} else {
 		return false;
@@ -205,7 +237,7 @@ bool EscapeDetect::checkArgumentEscape(AliasMap *localAliasMap, AliasMap *argume
 		isInMap(dst, argumentsAliasMap)) {
 		AliasMap &aReference = *localAliasMap;
 		StringRef varName = aReference[src]->getName();
-		printReport(storeInst, "Escapes from function arguments. Variable escaped is \'" + varName.str() + "\'");
+		printReport(storeInst, "Causing escape from function arguments. Variable escaped is \'" + varName.str() + "\'");
 		return true;
 	} else {
 		return false;
@@ -270,6 +302,7 @@ void EscapeDetect::printReport(Instruction* inst, string message) {
 	if (isInSet(inst, &errorInstructions)) {
 		return;
 	}
+	counter++;
 	errorInstructions.insert(inst);
 	errs() << "WARNING: ";
     if (MDNode *n = inst->getMetadata("dbg")) {
@@ -289,13 +322,16 @@ bool EscapeDetect::isPointerToPointer(const Value* V) {
 }
 
 bool EscapeDetect::isInMap(Value* aValue, AliasMap *aMap) {
+	//outs() << "Map size is " << aMap->size() << "\n";
 	bool result = aMap->find(aValue) != aMap->end();
+	//outs() << "run out!\n";
 	//outs() << "is in map: " << result << "\n";
 	return result;
 }
 
 void EscapeDetect::addToMap(AliasMap* aMap, Value* v1, Value* v2) {
-	AliasMap &aReference = *aMap;	
+	AliasMap &aReference = *aMap;
+	//outs() << "enter addToMap\n";	
 	if (isInMap(v2, aMap)) {
 		//outs() << v2 << " is in map " << aMap << "\n";
 		//outs() << v2 << " maps to " << aMap->lookup(v2) << "\n";

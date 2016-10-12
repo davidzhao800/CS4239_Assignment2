@@ -30,22 +30,22 @@ private:
 	typedef DenseMap<Value*, Instruction*> VIMap;
 	typedef DenseMap<Value*, Value*> AliasMap;
 	
-	VIMap valueToInstruction;
+	int counter;
 	set<Module*> moduleSet;
 	set<Instruction*> errorInstructions;
 	StringRef functionName;
 
 	void runDFS(Module * module);
 	void recursiveDFSToposort(BasicBlock *BB, 
-	AliasMap localAliasMap,  AliasMap globalAliasMap, AliasMap argumentsAliasMap, BBColorMap ColorMap);
+	AliasMap localAliasMap,  AliasMap globalAliasMap, AliasMap argumentsAliasMap, VIMap valueToInst, BBColorMap ColorMap);
 	void doBasicBlock(BasicBlock *BB,
-	AliasMap *localAliasMap,  AliasMap *globalAliasMap, AliasMap *argumentsAliasMap);
+	AliasMap *localAliasMap,  AliasMap *globalAliasMap, AliasMap *argumentsAliasMap, VIMap *valueToInst);
 
-	void handleReturnInst(ReturnInst *returnInst, AliasMap *localAliasMap);
-	void handleStoreInst(StoreInst *storeInst, AliasMap *localAliasMap,  AliasMap *globalAliasMap, AliasMap *argumentsAliasMap);
+	void handleReturnInst(ReturnInst *returnInst, AliasMap *localAliasMap, VIMap *valueToInst);
+	void handleStoreInst(StoreInst *storeInst, AliasMap *localAliasMap,  AliasMap *globalAliasMap, AliasMap *argumentsAliasMap, VIMap *valueToInst);
 	void handleAllocaInst(AllocaInst *allocaInst, AliasMap *localAliasMap);
 	void handleLoadInst(LoadInst *loadInst, AliasMap *localAliasMap,  AliasMap *globalAliasMap, AliasMap *argumentsAliasMap);
-	void handleGEPInst(GEPOperator *GEPInst, AliasMap *localAliasMap,  AliasMap *globalAliasMap, AliasMap *argumentsAliasMap);
+	void handleGEPInst(GetElementPtrInst *GEPInst, AliasMap *localAliasMap,  AliasMap *globalAliasMap, AliasMap *argumentsAliasMap, VIMap *valueToInst);
 	
 	bool checkGlobalVarEscape(AliasMap *localAliasMap, AliasMap *globalAliasMap, StoreInst *storeInst);
 	bool checkArgumentEscape(AliasMap *localAliasMap, AliasMap *argumentsAliasMap, StoreInst *storeInst);
