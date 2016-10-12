@@ -54,11 +54,6 @@ int main(int argc, char **argv) {
 		modules[i - 1] = M;
 	}
 
-	//Module *M = ParseIRFile(argv[1], Err, Context);
-//	if (M == nullptr) {
-//		fprintf(stderr, "failed to read IR file %s\n", argv[1]);
-//		return 1;
-//	}
 	for (int o = 0; o < argc - 1; o++) {
 		Module* m = modules[o];
 		set<StringRef> globalPointers;
@@ -86,9 +81,6 @@ int main(int argc, char **argv) {
 			set<pair<BasicBlock*, StringRef>> mutipleReturn;
 			set<pair<BasicBlock*, StringRef>> bonus;
 
-			//if (r->isPointerTy()) {
-			//printf("Basic Block Size: %d\n", F.getBasicBlockList().size());
-
 			for (auto &bb : F) {
 
 				// get return pointer name
@@ -97,6 +89,8 @@ int main(int argc, char **argv) {
 						ReturnInst *retInstr = dyn_cast<ReturnInst>(&i);
 						lastBB = &bb;
 						if (r->isPointerTy()) {
+//							Value * retValue = retInstr->getOperand(0);
+//							uintptr_t returnValue = reinterpret_cast<uintptr_t>(retValue);
 							returnValue = retInstr->getPrevNode()->getOperand(0);
 							if (returnValue->hasName()) {
 								retPointerName = returnValue->getName();
@@ -157,6 +151,7 @@ int main(int argc, char **argv) {
 			}
 			//cout << localVar.size() << endl;
 
+			// get funtion argument
 			for(Function::arg_iterator k = F.arg_begin(); k != F.arg_end(); k++){
 				Argument *a = k;
 				if (a->getType()->isPointerTy() && a->getType()->getContainedType(0)->isPointerTy()){
@@ -219,23 +214,22 @@ void getReturn(BasicBlock* bb, Value* returnValue, set<pair<BasicBlock*,BasicBlo
 		}
 	}
 	for (pred_iterator PI = pred_begin(bb), E = pred_end(bb); PI != E; ++PI) {
-		//printf("%p is getting its predecor\n",bb);
+
 		BasicBlock *Pred = *PI;
 		pair<BasicBlock*, BasicBlock*> newEdge(Pred, bb);
 
 		if (edges->find(newEdge) == edges->end()) {
-			//printf("%p -> %p\n", Pred, bb);
+
 			edges->insert(newEdge);
-			//cout << "Number of edges: " << edges->size() << endl;
+
 			getReturn(Pred, returnValue, edges, mutipleReturn);
 		}
 
 	}
 }
 
-bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localValue, set<pair<BasicBlock*,BasicBlock*>> * edges) {
-	//printf("current executing block is %p\n", bb);
-	//cout << "number of instructions: " << bb->getInstList().size() << endl;
+bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localValue,
+		set<pair<BasicBlock*,BasicBlock*>> * edges) {
 
 	int count=0;
 	BasicBlock::iterator i = bb->end();
@@ -243,16 +237,16 @@ bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localVal
 	e--;
 	i--;
 	for (; i != e; --i){
-		//cout << i->getOpcode() << endl;
+
 		count++;
 		if (i->getOpcode() == Instruction::Store) {
 
 			StoreInst *storeInstr = dyn_cast<StoreInst>(i);
-			StringRef op2 = storeInstr->getOperand(1)->getName();
 			StringRef op1 = storeInstr->getOperand(0)->getName();
+			StringRef op2 = storeInstr->getOperand(1)->getName();
 
 			if (op2 == returnName) {
-				//cout << "wtf!" << endl;
+
 				if (localValue.find(op1) != localValue.end()) {
 					//printf("Return pointer points to local var %s\n", op1);
 
@@ -295,6 +289,12 @@ bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localVal
 
 						//printf("Return pointer points to non-local array %s\n", op);
 
+					} else if (count < bb->getInstList().size() && i->getPrevNode()->getOpcode() == Instruction::Load){
+						LoadInst *loadInstr = dyn_cast<LoadInst>(i->getPrevNode());
+						if (loadInstr->getOperand(0)->hasName()){
+
+							return check_escape(bb, loadInstr->getOperand(0)->getName(), localValue, edges);
+						}
 					}
 
 					//printf("Return pointer points to non-local var %s\n", op1);
