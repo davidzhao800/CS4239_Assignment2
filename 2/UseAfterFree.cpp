@@ -34,6 +34,8 @@ using namespace std;
 using namespace llvm;
 bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localValue, set<pair<BasicBlock*,BasicBlock*>> *edges);
 void getReturn(BasicBlock* bb, Value* returnValue, set<pair<BasicBlock*,BasicBlock*>>* edges, set<pair<BasicBlock*, StringRef>>* mutipleReturn);
+bool check_arg_ptr(BasicBlock* firstBB, BasicBlock* bb, StringRef argName, set<StringRef> localValue, set<pair<BasicBlock*,BasicBlock*>> * edges);
+bool _check_arg_ptr( Value* intermediate, BasicBlock* bb, StringRef argName, set<StringRef> localValue, set<pair<BasicBlock*,BasicBlock*>> * edges);
 StringRef functionName;
 
 int main(int argc, char **argv) {
@@ -52,11 +54,6 @@ int main(int argc, char **argv) {
 		modules[i - 1] = M;
 	}
 
-	//Module *M = ParseIRFile(argv[1], Err, Context);
-//	if (M == nullptr) {
-//		fprintf(stderr, "failed to read IR file %s\n", argv[1]);
-//		return 1;
-//	}
 	for (int o = 0; o < argc - 1; o++) {
 		Module* m = modules[o];
 		set<StringRef> globalPointers;
@@ -79,11 +76,10 @@ int main(int argc, char **argv) {
 			Value *returnValue;
 			StringRef retPointerName;
 			BasicBlock *lastBB;
+			BasicBlock *firstBB;
 			set<pair<BasicBlock*, BasicBlock*>> edges;
 			set<pair<BasicBlock*, StringRef>> mutipleReturn;
-
-			//if (r->isPointerTy()) {
-			//printf("Basic Block Size: %d\n", F.getBasicBlockList().size());
+			set<pair<BasicBlock*, StringRef>> bonus;
 
 			for (auto &bb : F) {
 
@@ -93,6 +89,8 @@ int main(int argc, char **argv) {
 						ReturnInst *retInstr = dyn_cast<ReturnInst>(&i);
 						lastBB = &bb;
 						if (r->isPointerTy()) {
+//							Value * retValue = retInstr->getOperand(0);
+//							uintptr_t returnValue = reinterpret_cast<uintptr_t>(retValue);
 							returnValue = retInstr->getPrevNode()->getOperand(0);
 							if (returnValue->hasName()) {
 								retPointerName = returnValue->getName();
@@ -127,7 +125,7 @@ int main(int argc, char **argv) {
 				//get local variable
 				for (auto &i : bb) {
 					if (i.getOpcode() == Instruction::Alloca) {
-
+						firstBB = &bb;
 						AllocaInst *allocaInstr = dyn_cast<AllocaInst>(&i);
 						//printf("%s\n", allocaInstr->getName());
 						PointerType *allocType = allocaInstr->getType();
@@ -145,23 +143,23 @@ int main(int argc, char **argv) {
 				}
 
 			}
+			//cout << localVar.size() << endl;
+			for (auto &x : localVar ) {
+				if(x.empty()){
+					localVar.erase(localVar.find(x));
+				}
+			}
+			//cout << localVar.size() << endl;
 
-//			for(Function::arg_iterator k = F.arg_begin(); k != F.arg_end(); k++){
-//				Argument *a = k;
-//				if (a->getType()->isPointerTy()){
-//					cout << "heiheiheiehiehei" << endl;
-//					pair<BasicBlock*, StringRef> argPointer(lastBB, a->getName());
-//					mutipleReturn.insert(argPointer);
-//				}
-//			}
-				//cout << "Size of localPointer: " << localPointer.size() << endl;
-				//cout << "Size of localVar: "  << localVar.size() << endl;
+			// get funtion argument
+			for(Function::arg_iterator k = F.arg_begin(); k != F.arg_end(); k++){
+				Argument *a = k;
+				if (a->getType()->isPointerTy() && a->getType()->getContainedType(0)->isPointerTy()){
 
-
-
-				//bool result = check_escape( lastBB, retPointerName, localVar, &checkEdges);
-				//cout << "This function escapes? "  << result << endl;
-			//}
+					pair<BasicBlock*, StringRef> argPointer(lastBB, a->getName());
+					bonus.insert(argPointer);
+				}
+			}
 
 			for (StringRef x : globalPointers) {
 
@@ -175,6 +173,15 @@ int main(int argc, char **argv) {
 
 				//printf("%s    %p\n",x.second, x.first);
 				bool result = check_escape(x.first, x.second, localVar,
+						&checkEdges);
+				//cout << "This function escapes? " << result << endl;
+			}
+
+			for (auto &x : bonus) {
+				set<pair<BasicBlock*, BasicBlock*>> checkEdges;
+
+				//printf("%s    %p\n",x.second, x.first);
+				bool result = check_arg_ptr(firstBB, x.first, x.second, localVar,
 						&checkEdges);
 				//cout << "This function escapes? " << result << endl;
 			}
@@ -207,23 +214,22 @@ void getReturn(BasicBlock* bb, Value* returnValue, set<pair<BasicBlock*,BasicBlo
 		}
 	}
 	for (pred_iterator PI = pred_begin(bb), E = pred_end(bb); PI != E; ++PI) {
-		//printf("%p is getting its predecor\n",bb);
+
 		BasicBlock *Pred = *PI;
 		pair<BasicBlock*, BasicBlock*> newEdge(Pred, bb);
 
 		if (edges->find(newEdge) == edges->end()) {
-			//printf("%p -> %p\n", Pred, bb);
+
 			edges->insert(newEdge);
-			//cout << "Number of edges: " << edges->size() << endl;
+
 			getReturn(Pred, returnValue, edges, mutipleReturn);
 		}
 
 	}
 }
 
-bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localValue, set<pair<BasicBlock*,BasicBlock*>> * edges) {
-	//printf("current executing block is %p\n", bb);
-	//cout << "number of instructions: " << bb->getInstList().size() << endl;
+bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localValue,
+		set<pair<BasicBlock*,BasicBlock*>> * edges) {
 
 	int count=0;
 	BasicBlock::iterator i = bb->end();
@@ -231,16 +237,16 @@ bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localVal
 	e--;
 	i--;
 	for (; i != e; --i){
-		//cout << i->getOpcode() << endl;
+
 		count++;
 		if (i->getOpcode() == Instruction::Store) {
 
 			StoreInst *storeInstr = dyn_cast<StoreInst>(i);
-			StringRef op2 = storeInstr->getOperand(1)->getName();
 			StringRef op1 = storeInstr->getOperand(0)->getName();
+			StringRef op2 = storeInstr->getOperand(1)->getName();
 
 			if (op2 == returnName) {
-				//cout << "wtf!" << endl;
+
 				if (localValue.find(op1) != localValue.end()) {
 					//printf("Return pointer points to local var %s\n", op1);
 
@@ -283,6 +289,12 @@ bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localVal
 
 						//printf("Return pointer points to non-local array %s\n", op);
 
+					} else if (count < bb->getInstList().size() && i->getPrevNode()->getOpcode() == Instruction::Load){
+						LoadInst *loadInstr = dyn_cast<LoadInst>(i->getPrevNode());
+						if (loadInstr->getOperand(0)->hasName()){
+
+							return check_escape(bb, loadInstr->getOperand(0)->getName(), localValue, edges);
+						}
 					}
 
 					//printf("Return pointer points to non-local var %s\n", op1);
@@ -305,6 +317,124 @@ bool check_escape( BasicBlock* bb, StringRef returnName, set<StringRef> localVal
 			edges->insert(newEdge);
 			//cout << "Number of edges: " << edges->size() << endl;
 			result = result || check_escape(Pred, returnName, localValue, edges);
+		}
+
+	}
+	return result;
+}
+
+bool check_arg_ptr(BasicBlock* firstBB, BasicBlock* bb, StringRef argName, set<StringRef> localValue, set<pair<BasicBlock*,BasicBlock*>> * edges){
+
+	Value *intermediate;
+	for (auto &i : *firstBB){
+		if (i.getOpcode() == Instruction::Store) {
+
+			StoreInst *storeInstr = dyn_cast<StoreInst>(&i);
+			StringRef op1 = storeInstr->getOperand(0)->getName();
+			StringRef op2 = storeInstr->getOperand(1)->getName();
+
+			if (op1 == argName) {
+				//cout << "found store **%argptr ***%1!" << endl;
+				//get %1
+				intermediate = storeInstr->getOperand(1);
+			}
+		}
+	}
+	return _check_arg_ptr(intermediate, bb, argName, localValue, edges);
+}
+
+bool _check_arg_ptr( Value* intermediate, BasicBlock* bb, StringRef argName, set<StringRef> localValue, set<pair<BasicBlock*,BasicBlock*>> * edges) {
+	//printf("current executing block is %p\n", bb);
+	//cout << "number of instructions: " << bb->getInstList().size() << endl;
+
+	int count=0;
+	BasicBlock::iterator i = bb->end();
+	BasicBlock::iterator e = bb->begin();
+	e--;
+	i--;
+	for (; i != e; --i){
+		//cout << i->getOpcode() << endl;
+		count++;
+		if (i->getOpcode() == Instruction::Load) {
+
+			LoadInst *loadInstr = dyn_cast<LoadInst>(i);
+			Value *op1 = loadInstr->getOperand(0);
+
+			if (op1 == intermediate){
+				if(i->getNextNode()->getOpcode() == Instruction::Store){
+					StoreInst *storeInstr = dyn_cast<StoreInst>(i->getNextNode());
+					StringRef opName2 = storeInstr->getOperand(1)->getName();
+					StringRef opName1 = storeInstr->getOperand(0)->getName();
+
+					if (localValue.find(opName1) != localValue.end()) {
+						//printf("Return pointer points to local var %s\n", op1);
+
+						errs() << "WARNING: ";
+						if (MDNode *n = i->getMetadata("dbg")) { // Here I is an LLVM instruction
+
+							DILocation loc(n); // DILocation is in DebugInfo.h
+							unsigned line = loc.getLineNumber();
+							StringRef file = loc.getFilename();
+							StringRef dir = loc.getDirectory();
+							errs() << "Line " << line << " of file "
+									<< file.str() << " in " << functionName
+									<< " in " << dir.str() << ": ";
+						}
+						errs() << "Stack-local variable \'" << opName1
+								<< "\' escape!\n";
+
+						return true;
+					} else {
+						if (count < bb->getInstList().size()
+								&& i->getPrevNode()->getOpcode() == Instruction::GetElementPtr) {
+							GetElementPtrInst *getElementPtrInstr = dyn_cast<GetElementPtrInst>(i->getPrevNode());
+
+							// array name
+							StringRef op = getElementPtrInstr->getOperand(0)->getName();
+
+							if (localValue.find(op) != localValue.end()) {
+								//printf("Return pointer points to local array %s\n", op);
+								errs() << "WARNING: ";
+								if (MDNode *n = i->getMetadata("dbg")) { // Here I is an LLVM instruction
+
+									DILocation loc(n); // DILocation is in DebugInfo.h
+									unsigned line = loc.getLineNumber();
+									StringRef file = loc.getFilename();
+									StringRef dir = loc.getDirectory();
+									errs() << "Line " << line << " of file "
+											<< file.str() << " in "
+											<< functionName << " in "
+											<< dir.str() << ": ";
+								}
+								errs() << "Stack-local array \'" << op
+										<< "\' escape!\n";
+								return true;
+							}
+
+							//printf("Return pointer points to non-local array %s\n", op);
+
+						}
+						//printf("Return pointer points to non-local var %s\n", op1);
+						return false;
+					}
+				}
+			}
+		}
+	}
+
+	bool result = false;
+
+	for (pred_iterator PI = pred_begin(bb), E = pred_end(bb); PI != E;
+			++PI) {
+		//printf("%p is getting its predecor\n",bb);
+		BasicBlock *Pred = *PI;
+		pair<BasicBlock*,BasicBlock*> newEdge (Pred, bb);
+
+		if (edges->find(newEdge) == edges->end()) {
+			//printf("%p -> %p\n", Pred, bb);
+			edges->insert(newEdge);
+			//cout << "Number of edges: " << edges->size() << endl;
+			result = result || _check_arg_ptr(intermediate, Pred, argName, localValue, edges);
 		}
 
 	}
