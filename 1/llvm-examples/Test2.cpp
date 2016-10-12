@@ -17,8 +17,6 @@ char** arg_v;
 int arg_c;
 void traceback(LoadInst *L){
 
-	//printf("traceback: %s\n", L->getPrevNode()->getName().str().c_str());	
-
 	std::set<std::pair<BasicBlock*,BasicBlock*>> history;
 	printf("Operand 0 = %s\n", L->getOperand(0)->getName().str().c_str());
 	std::string str = L->getOperand(0)->getName().str();
@@ -32,7 +30,7 @@ void traceback(LoadInst *L){
 		pending.erase(I);
 
 		StoreInst *S = dyn_cast<StoreInst>(I);
-		
+
 		if (S != nullptr){
 			if (S->getOperand(1)->getName().str() == str){
 				printf("found store inst %p:",S);
@@ -41,10 +39,11 @@ void traceback(LoadInst *L){
 			}
 		}
 
-		if (L->getPrevNode() == nullptr){
-			BasicBlock *B = L->getParent();
+		//if (I->getPrevNode() == nullptr){
+		if (I==I->getParent()->begin()){
+			BasicBlock *B = I->getParent();
 			for (pred_iterator it = pred_begin(B);
-			it != pred_end(B); it++){
+					it != pred_end(B); it++){
 				std::pair<BasicBlock*,BasicBlock*> edge(B,*it);
 				if (history.find(edge) == history.end()){
 					history.insert(edge);
@@ -55,8 +54,9 @@ void traceback(LoadInst *L){
 				}
 			}
 		}
+
 		else{
-			pending.insert(L->getPrevNode());
+			pending.insert(I->getPrevNode());
 		}
 	}
 }
@@ -77,32 +77,40 @@ int main(int argc, char **argv){
 		// For each function F
 		for (auto &BB: F){ // For each basic block BB
 			//printf("inside BB\n");
-
+			Instruction* prev = nullptr;
 			for (auto &I: BB) {// For each instruction I
 				//printf("inside I\n");				
-				/*
-				   CallInst *Call = dyn_cast<CallInst>(&I);
-				   if (Call != nullptr){
 
-				   printf("%d\n",Call->getNumOperands());
+				CallInst *Call = dyn_cast<CallInst>(&I);
+				if (Call != nullptr){
 
-				   Function *G = Call->getCalledFunction();								
-				   if (G == nullptr) continue;
-				   printf("Name = %s\n", G->getName().str().c_str());
-				   }
-				 */
-				LoadInst *L = dyn_cast<LoadInst>(&I);
-				if (L != nullptr){
-					printf("Operand 0 = %s\n", L->getOperand(0)->getName().str().c_str());
-					traceback(L);
+					printf("%d\n",Call->getNumOperands());
+
+					Function *G = Call->getCalledFunction();								
+					if (G == nullptr) {
+
+						if (prev!=nullptr){
+							LoadInst *L = dyn_cast<LoadInst>(prev);
+							if (L != nullptr){
+								printf("Operand 0 = %s\n", L->getOperand(0)->getName().str().c_str());
+								traceback(L);
+							}
+						}
+
+					}else{
+						printf("Name = %s\n", G->getName().str().c_str());
+					}
 				}
+
 				/*
 				   StoreInst *S = dyn_cast<StoreInst>(&I);
 				   if (S != nullptr){
 				   printf("Store Operand 0 = %s\n", S->getOperand(0)->getName().str().c_str());
 				   printf("Store Operand 1 = %s\n", S->getOperand(1)->getName().str().c_str());
 				   }*/
+				prev = &I;
 			}
+			prev = nullptr;
 		}
 	}
 }

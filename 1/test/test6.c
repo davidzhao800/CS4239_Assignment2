@@ -1,12 +1,12 @@
 #include "stdio.h"
+void bar() {
+	printf("hello world");
+}
 
 void foo() {
 	bar();
 }
 
-void bar() {
-	printf("hello world");
-}
 
 int main() {
 	int i = 1;
