@@ -20,12 +20,12 @@ void EscapeDetect::runDFS(Module * module) {
 	//outs() << " Running DFS...\n";
 	//outs() << " Testing global variables...\n";
 	outs() << "============Processing " << module->getModuleIdentifier() << "===========\n";
-	set<Value*> globalVars;
+	AliasMap globalAliasMap;
 	for (Module::global_iterator i = module->global_begin(); i!= module->global_end(); i++)	{	
 		GlobalVariable *g = i;
 		if(isa<PointerType>(g->getType())) {
 			//outs() << g->getName() << " is a pointer\n" ;
-			globalVars.insert(g);
+			globalAliasMap[g] = g;
 		}
 	}
 	//outs() << " Global variables done.\n";
@@ -36,39 +36,39 @@ void EscapeDetect::runDFS(Module * module) {
 		}
 		outs() << "Processing " << F.getName() << "...\n";
 		functionName = F.getName();
-		set<Value*> arguments;
+		AliasMap argumentsAliasMap;
 		//outs() << " Testing function arguments...\n";
 		for (auto &arg : F.getArgumentList()) {
 			if(isPointerToPointer(&arg)) {
 				
 				//outs() << arg.getName() << " is a pointer to pointer\n" ;
-				arguments.insert(&arg);
+				argumentsAliasMap[&arg] = &arg;
 			}
 		}
 		//outs() << " Function arguments done.\n";
-		set<Value*> localVarSet;
+		AliasMap localAliasMap = AliasMap();
 		BBColorMap ColorMap;
 		for (Function::const_iterator I = F.begin(), IE = F.end(); I != IE; ++I) {
       		ColorMap[I] = EscapeDetect::WHITE;
     	}
-		recursiveDFSToposort(&F.getEntryBlock(), localVarSet, globalVars, arguments, ColorMap);
-		outs() << F.getName() << " done.\n";
+		recursiveDFSToposort(&F.getEntryBlock(), localAliasMap, globalAliasMap, argumentsAliasMap, ColorMap);
+		//outs() << F.getName() << " done.\n";
 	}
 }
 
 void EscapeDetect::recursiveDFSToposort(BasicBlock *BB, 
-	set<Value*> localVar,  set<Value*> globalVars, set<Value*> arguments, BBColorMap ColorMap) {
+	AliasMap localAliasMap,  AliasMap globalAliasMap, AliasMap argumentsAliasMap, BBColorMap ColorMap) {
 	if (!isReturnBlock(BB)) {
 		ColorMap[BB] = EscapeDetect::GREY;
 	}
-	doBasicBlock(BB, &localVar, &globalVars, &arguments);
+	doBasicBlock(BB, &localAliasMap, &globalAliasMap, &argumentsAliasMap);
 	TerminatorInst *TInst = BB->getTerminator();
 	for (unsigned I = 0, NSucc = TInst->getNumSuccessors(); I < NSucc; ++I) {
       BasicBlock *Succ = TInst->getSuccessor(I);
       Color SuccColor = ColorMap[Succ];
       if (SuccColor == EscapeDetect::WHITE ||
 			(SuccColor == EscapeDetect::GREY && NSucc == 1)) {
-        recursiveDFSToposort(Succ, localVar, globalVars, arguments, ColorMap);
+        recursiveDFSToposort(Succ, localAliasMap, globalAliasMap, argumentsAliasMap, ColorMap);
       }
     }
     // This BB is finished (fully explored)
@@ -78,50 +78,99 @@ void EscapeDetect::recursiveDFSToposort(BasicBlock *BB,
 }
 
 void EscapeDetect::doBasicBlock(BasicBlock *BB,
-	set<Value*> *localVar, set<Value*> *globalVars, set<Value*> *arguments) {
+	AliasMap *localAliasMap,  AliasMap *globalAliasMap, AliasMap *argumentsAliasMap) {
 	for (auto &I : *BB) {
 		//outs() << "--------Do Instruction " << &I << "---------\n";
 		if (isa<ReturnInst>(I)) {
-			//outs() << "Hit return instruction!\n";
+			//outs() << "Processing return instruction\n";
 			ReturnInst *returnInst = dyn_cast<ReturnInst>(&I);
-			Value *returnValue = returnInst->getReturnValue();
-			if (returnValue == nullptr) {
-				//outs() << "The return value is void\n";	
-				continue;
-			} else if (!isa<PointerType>(returnValue->getType())) {
-				//outs() << "The return value is not a pointer\n";
-				continue;
-			}
-			returnValue = returnInst->getPrevNode()->getOperand(0);
-			//outs() << "-Return value is: " << returnValue << "\n";
-			
-			if (isInSet(returnValue, localVar)) {
-				printReport(&I, "Escapes from return value. Variable escaped is \'" + returnValue->getName().str() + "\'");			
-			}
+			handleReturnInst(returnInst, localAliasMap);
 		} else if (isa<StoreInst>(I)) {
-			bool success = false;
+			//outs() << "Processing store instruction\n";
 			StoreInst *storeInst = dyn_cast<StoreInst>(&I);
-			if (!success)			
-				success = success || checkGlobalVarEscape(localVar, globalVars, storeInst);
-			if (!success)
-				success = success || checkArgumentEscape(localVar, arguments, storeInst);
-			if (!success)
-				success = success || checkGlobalVar(localVar, globalVars, storeInst);
-			if (!success)
-				success = success || checkLocalVar(localVar, storeInst);
-			if (!success)
-				success = success || checkArguments(localVar, arguments, storeInst);
+			handleStoreInst(storeInst, localAliasMap, globalAliasMap, argumentsAliasMap);
 		} else if (isa<AllocaInst>(I)) {
+			//outs() << "Processing alloca instruction\n";
 			AllocaInst *allocaInst = dyn_cast<AllocaInst>(&I);
-			Type *allocaType = allocaInst->getAllocatedType();
-			if (isa<ArrayType>(*allocaType) || isa<IntegerType>(*allocaType)) {
-				Value *value = dyn_cast<Value>(allocaInst);
-				//outs() << allocaInst->getName() << " is a local variable\n";
-				localVar->insert(allocaInst);
-			}
+			handleAllocaInst(allocaInst, localAliasMap);
+		} else if (isa<LoadInst>(I)) {
+			//outs() << "Processing load instruction\n";
+			LoadInst *loadInst = dyn_cast<LoadInst>(&I);
+			handleLoadInst(loadInst, localAliasMap, globalAliasMap, argumentsAliasMap);
+		} else if (isa<GEPOperator>(I)) {
+			//outs() << "Processing gep instruction\n";
+			GEPOperator *GEPInst = dyn_cast<GEPOperator>(&I);
+			handleGEPInst(GEPInst, localAliasMap, globalAliasMap, argumentsAliasMap);			
 		}
 	}
 }
+
+void EscapeDetect::handleReturnInst(ReturnInst *returnInst, AliasMap *localAliasMap) {
+	Value *returnValue = returnInst->getReturnValue();
+	if (returnValue == nullptr) {
+		//outs() << "The return value is void\n";	
+		return;
+	} else if (!isa<PointerType>(returnValue->getType())) {
+		//outs() << "The return value is not a pointer\n";
+		return;
+	}
+	returnValue = returnInst->getPrevNode()->getOperand(0);
+	if (isInMap(returnValue, localAliasMap)) {
+		AliasMap &aReference = *localAliasMap;
+		StringRef varName = aReference[returnValue]->getName();
+		printReport(returnInst, "Escapes from return value. Variable escaped is \'" + varName.str() + "\'");
+	}
+}
+
+void EscapeDetect::handleStoreInst(StoreInst *storeInst,
+	AliasMap *localAliasMap,  AliasMap *globalAliasMap, AliasMap *argumentsAliasMap) {
+	bool success = false;
+	if (!success)			
+		success = success || checkGlobalVarEscape(localAliasMap, globalAliasMap, storeInst);
+	if (!success)
+		success = success || checkArgumentEscape(localAliasMap, argumentsAliasMap, storeInst);
+	if (!success)
+		success = success || checkGlobalVar(localAliasMap, globalAliasMap, argumentsAliasMap, storeInst);
+	if (!success)
+		success = success || checkLocalVar(localAliasMap, globalAliasMap, argumentsAliasMap, storeInst);
+	if (!success)
+		success = success || checkArguments(localAliasMap, globalAliasMap, argumentsAliasMap, storeInst);
+}
+
+void EscapeDetect::handleAllocaInst(AllocaInst *allocaInst, AliasMap *localAliasMap) {
+	//Type *allocaType = allocaInst->getAllocatedType();
+	Value *value = dyn_cast<Value>(allocaInst);
+	AliasMap &aReference = *localAliasMap;
+	aReference[allocaInst] = allocaInst;
+}
+
+void EscapeDetect::handleLoadInst(LoadInst *loadInst, AliasMap *localAliasMap, AliasMap *globalAliasMap, AliasMap *argumentsAliasMap)
+{
+	Value *src = loadInst->getOperand(0);
+	Value *dst = loadInst;
+
+	if (isInMap(src, localAliasMap)) {
+		addToMap(localAliasMap, dst, src);
+	} else if (isInMap(src, globalAliasMap)) {
+		addToMap(globalAliasMap, dst, src);
+	} else if (isInMap(src, argumentsAliasMap)) {
+		addToMap(argumentsAliasMap, dst, src);
+	}
+}
+void EscapeDetect::handleGEPInst(GEPOperator *gepInst, AliasMap *localAliasMap, AliasMap *globalAliasMap, AliasMap *argumentsAliasMap)
+{
+	Value *src = gepInst->getOperand(0);
+	Value *dst = gepInst;
+
+	if (isInMap(src, localAliasMap)) {
+		addToMap(localAliasMap, dst, src);
+	} else if (isInMap(src, globalAliasMap)) {
+		addToMap(globalAliasMap, dst, src);
+	} else if (isInMap(src, argumentsAliasMap)) {
+		addToMap(argumentsAliasMap, dst, src);
+	}
+}
+
 
 bool EscapeDetect::isReturnBlock(BasicBlock *BB) {
 	TerminatorInst *TInst = BB->getTerminator();
@@ -132,121 +181,89 @@ bool EscapeDetect::isReturnBlock(BasicBlock *BB) {
 	}
 }
 
-bool EscapeDetect::checkGlobalVarEscape(set<Value*> *localVar, set<Value*> *globalVars, StoreInst *storeInst) {
+bool EscapeDetect::checkGlobalVarEscape(AliasMap *localAliasMap, AliasMap *globalAliasMap, StoreInst *storeInst) {
 	//outs() << "check global escape: " << storeInst << "\n";
 	Value *src = storeInst->getOperand(0);
 	Value *dst = storeInst->getOperand(1);
 	
-	if (isa<GEPOperator>(*src)) {
-		GEPOperator *gep = dyn_cast<GEPOperator>(src);
-		src = gep->getPointerOperand();
-		//outs() << "src changed\n";
-	}
-	
-	if (isInSet(dst, globalVars) &&
-		isInSet(src, localVar)) {
-		printReport(storeInst, "Escapes from global varibale. Variable escaped is \'" + src->getName().str() + "\'");
+	if (isInMap(src, localAliasMap) &&
+		isInMap(dst, globalAliasMap)) {
+		AliasMap &aReference = *localAliasMap;
+		StringRef varName = aReference[src]->getName();
+		printReport(storeInst, "Escapes from global varibale. Variable escaped is \'" + varName.str() + "\'");
 		return true;
 	} else {
 		return false;
 	}
 }
 
-bool EscapeDetect::checkArgumentEscape(set<Value*> *localVar, set<Value*> *arguments, StoreInst *storeInst) {
-	//outs() << "check argument escape: " << storeInst << "\n";
+bool EscapeDetect::checkArgumentEscape(AliasMap *localAliasMap, AliasMap *argumentsAliasMap, StoreInst *storeInst) {
 	Value *src = storeInst->getOperand(0);
 	Value *dst = storeInst->getOperand(1);
-	
-	if (isa<GEPOperator>(*src)) {
-		GEPOperator *gep = dyn_cast<GEPOperator>(src);
-		src = gep->getPointerOperand();
-		//outs() << "src changed\n";
-	}
-	
-	if (!isInSet(src, localVar)) {
-		return false;
-	}
-	
-	Instruction *previousInst = storeInst->getPrevNode();
-	if (isa<LoadInst>(*previousInst) || isa<GetElementPtrInst>(*previousInst)) {
-		dst = previousInst->getOperand(0);
-	}
 
-	if (isInSet(dst, arguments)) {
-		printReport(storeInst, "Escapes from function arguments. Variable escaped is \'" + src->getName().str() + "\'");
+	if (isInMap(src, localAliasMap) &&
+		isInMap(dst, argumentsAliasMap)) {
+		AliasMap &aReference = *localAliasMap;
+		StringRef varName = aReference[src]->getName();
+		printReport(storeInst, "Escapes from function arguments. Variable escaped is \'" + varName.str() + "\'");
 		return true;
 	} else {
 		return false;
 	}
 }
 
-bool EscapeDetect::checkLocalVar(set<Value*> *localVar, StoreInst *storeInst) {
+bool EscapeDetect::checkLocalVar(AliasMap *localAliasMap, AliasMap *globalAliasMap, AliasMap *argumentsAliasMap, StoreInst *storeInst) {
 	Value *src = storeInst->getOperand(0);
 	Value *dst = storeInst->getOperand(1);
-	//outs() << "check store local var: " << storeInst << "\n";
-	//check whether store constants
-	if (isa<Constant>(*src)) {
-		if (!isInSet(dst, localVar)) {
-			//outs() << dst->getName() << " is a local variable\n";
-			localVar->insert(dst);
-		}
-		//outs() << "1\n";
-		return true;
-	}
-	//check whether assign local vars
-	Instruction *previousInst = storeInst->getPrevNode();
-	if (isa<LoadInst>(*previousInst) || isa<GetElementPtrInst>(*previousInst)) {
-		src = previousInst->getOperand(0);
-	}
-	
-	if (isInSet(src, localVar)) {
-		if (!isInSet(dst, localVar)) {
-			//outs() << dst->getName() << " is a local variable\n";
-			localVar->insert(dst);
-		}
-		//outs() << "2\n";
-		return true;
-	}
-	//outs() << storeInst << ": not a local store instruction\n";
-	return false;
-}
 
-bool EscapeDetect::checkGlobalVar(set<Value*> *localVar, set<Value*> *globalVars, StoreInst *storeInst) {
-	Value *src = storeInst->getOperand(0);
-	Value *dst = storeInst->getOperand(1);
-	//outs() << "check store global var: " << storeInst << "\n";
-	if (isa<GEPOperator>(*src)) {
-		GEPOperator *gep = dyn_cast<GEPOperator>(src);
-		src = gep->getPointerOperand();
-		//outs() << "src changed\n";
-	}
-	if (isInSet(src, globalVars)) {
-		//outs() << "The local varibale is assigned with a global variable.\n";
-		if (isInSet(dst, localVar)) {	
-			localVar->erase(localVar->find(dst));
-		}
-		if (!isInSet(dst, globalVars)) {
-			globalVars->insert(dst);
+	if (isa<Constant>(*src) || isInMap(src, localAliasMap)) {
+		addToMap(localAliasMap, dst, src);
+		
+		if (isInMap(dst, globalAliasMap)) {
+			globalAliasMap->erase(globalAliasMap->find(dst));
+		} else if (isInMap(dst, argumentsAliasMap)) {
+			argumentsAliasMap->erase(argumentsAliasMap->find(dst));
 		}
 		return true;
 	} else {
-		//outs() << storeInst << ": not a global store instruction\n";
 		return false;
 	}
 }
 
-bool EscapeDetect::checkArguments(set<Value*> *localVar, set<Value*> *arguments, StoreInst *storeInst) {
+bool EscapeDetect::checkGlobalVar(AliasMap *localAliasMap, AliasMap *globalAliasMap, AliasMap *argumentsAliasMap, StoreInst *storeInst) {
 	Value *src = storeInst->getOperand(0);
 	Value *dst = storeInst->getOperand(1);
-	//outs() << "check store arguments: " << storeInst << "\n";
-	if (isInSet(src, arguments)) {
-		//outs() << "The argument is stored to a register.\n";
-		if (!isInSet(dst, arguments)) {
-			arguments->insert(dst);
+
+	if (isInMap(src, globalAliasMap)) {
+		addToMap(globalAliasMap, dst, src);
+		
+		if (isInMap(dst, localAliasMap)) {
+			localAliasMap->erase(localAliasMap->find(dst));
+		} else if (isInMap(dst, argumentsAliasMap)) {
+			argumentsAliasMap->erase(argumentsAliasMap->find(dst));
 		}
 		return true;
+	} else {
+		return false;
 	}
-	return false;
+}
+
+bool EscapeDetect::checkArguments(AliasMap *localAliasMap, AliasMap *globalAliasMap, AliasMap *argumentsAliasMap, StoreInst *storeInst) {
+	Value *src = storeInst->getOperand(0);
+	Value *dst = storeInst->getOperand(1);
+
+	if (isInMap(src, argumentsAliasMap)) {
+		addToMap(argumentsAliasMap, dst, src);
+
+		if (isInMap(dst, localAliasMap)) {
+			localAliasMap->erase(localAliasMap->find(dst));
+		}else if (isInMap(dst, globalAliasMap)) {
+			globalAliasMap->erase(globalAliasMap->find(dst));
+		}
+		return true;
+	} else {
+		return false;
+	}
 }
 
 void EscapeDetect::printReport(Instruction* inst, string message) {
@@ -269,4 +286,22 @@ void EscapeDetect::printReport(Instruction* inst, string message) {
 bool EscapeDetect::isPointerToPointer(const Value* V) {
     const Type* T = V->getType();
     return T->isPointerTy() && T->getContainedType(0)->isPointerTy();
+}
+
+bool EscapeDetect::isInMap(Value* aValue, AliasMap *aMap) {
+	bool result = aMap->find(aValue) != aMap->end();
+	//outs() << "is in map: " << result << "\n";
+	return result;
+}
+
+void EscapeDetect::addToMap(AliasMap* aMap, Value* v1, Value* v2) {
+	AliasMap &aReference = *aMap;	
+	if (isInMap(v2, aMap)) {
+		//outs() << v2 << " is in map " << aMap << "\n";
+		//outs() << v2 << " maps to " << aMap->lookup(v2) << "\n";
+		aReference[v1] = aReference[aReference[v2]];
+	} else {
+		//outs() << "v2 is a constant!!\n";
+		aReference[v1] = aReference[v1];		
+	}
 }

@@ -28,33 +28,45 @@ private:
 	enum Color {WHITE, GREY, BLACK};
 	typedef DenseMap<const BasicBlock*, Color> BBColorMap;
 	typedef DenseMap<Value*, Instruction*> VIMap;
+	typedef DenseMap<Value*, Value*> AliasMap;
+	
 	VIMap valueToInstruction;
 	set<Module*> moduleSet;
 	set<Instruction*> errorInstructions;
-	
 	StringRef functionName;
-	bool isLocalInstruction(Instruction);
-	void doBasicBlock(BasicBlock *BB, set<Value*> *localVar, set<Value*> *globalVars, set<Value*> *arguments);
+
+	void runDFS(Module * module);
+	void recursiveDFSToposort(BasicBlock *BB, 
+	AliasMap localAliasMap,  AliasMap globalAliasMap, AliasMap argumentsAliasMap, BBColorMap ColorMap);
+	void doBasicBlock(BasicBlock *BB,
+	AliasMap *localAliasMap,  AliasMap *globalAliasMap, AliasMap *argumentsAliasMap);
+
+	void handleReturnInst(ReturnInst *returnInst, AliasMap *localAliasMap);
+	void handleStoreInst(StoreInst *storeInst, AliasMap *localAliasMap,  AliasMap *globalAliasMap, AliasMap *argumentsAliasMap);
+	void handleAllocaInst(AllocaInst *allocaInst, AliasMap *localAliasMap);
+	void handleLoadInst(LoadInst *loadInst, AliasMap *localAliasMap,  AliasMap *globalAliasMap, AliasMap *argumentsAliasMap);
+	void handleGEPInst(GEPOperator *GEPInst, AliasMap *localAliasMap,  AliasMap *globalAliasMap, AliasMap *argumentsAliasMap);
+	
+	bool checkGlobalVarEscape(AliasMap *localAliasMap, AliasMap *globalAliasMap, StoreInst *storeInst);
+	bool checkArgumentEscape(AliasMap *localAliasMap, AliasMap *argumentsAliasMap, StoreInst *storeInst);
+	bool checkLocalVar(AliasMap *localAliasMap, AliasMap *globalAliasMap, AliasMap *argumentsAliasMap, StoreInst *storeInst);
+	bool checkGlobalVar(AliasMap *localAliasMap, AliasMap *globalAliasMap, AliasMap *argumentsAliasMap, StoreInst *storeInst);
+	bool checkArguments(AliasMap *localAliasMap, AliasMap *globalAliasMap, AliasMap *argumentsAliasMap, StoreInst *storeInst);
+	
 	bool isReturnBlock(BasicBlock *BB);
-	bool checkGlobalVarEscape(set<Value*> *localVar, set<Value*> *globalVars, StoreInst *storeInst);
-	bool checkArgumentEscape(set<Value*> *localVar, set<Value*> *arguments, StoreInst *storeInst);
-	bool checkLocalVar(set<Value*> *localVar, StoreInst *storeInst);
-	bool checkGlobalVar(set<Value*> *localVar, set<Value*> *globalVars, StoreInst *storeInst);
-	bool checkArguments(set<Value*> *localVar, set<Value*> *arguments, StoreInst *storeInst);
-	//bool isInSet(Value* aValue, set<Value*> *aValueSet);
 	bool isPointerToPointer(const Value* V);
-	void printReport(Instruction* inst, string msg);
 	template<class TypeA>
 	bool isInSet(TypeA* aTypeA, set<TypeA*> *aTypeASet) {
 		bool result = aTypeASet->find(aTypeA) != aTypeASet->end();
 		return result;
 	}
+	bool isInMap(Value* aValue, AliasMap* aMap);
+	void addToMap(AliasMap* aMap, Value* v1, Value* v2);
+	void printReport(Instruction* inst, string msg);
 public:
 	EscapeDetect();
 	void setModuleSet(set<Module*> aModuleSet);
 	void detectEscape();
-	void runDFS(Module * module);
-	void recursiveDFSToposort(BasicBlock *BB, set<Value*> localVar, set<Value*> globalVars, set<Value*> arguments, BBColorMap ColorMap);
 };
 #endif
 
