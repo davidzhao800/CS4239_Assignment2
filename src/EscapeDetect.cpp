@@ -162,10 +162,11 @@ void EscapeDetect::handleStoreInst(StoreInst *storeInst,
 }
 
 void EscapeDetect::handleAllocaInst(AllocaInst *allocaInst, AliasMap *localAliasMap) {
-	//Type *allocaType = allocaInst->getAllocatedType();
+	Type *allocaType = allocaInst->getAllocatedType();
+	if (!isa<PointerType>(allocaType)) {
 	Value *value = dyn_cast<Value>(allocaInst);
 	AliasMap &aReference = *localAliasMap;
-	aReference[allocaInst] = allocaInst;
+	aReference[allocaInst] = allocaInst;}
 }
 
 void EscapeDetect::handleLoadInst(LoadInst *loadInst, AliasMap *localAliasMap, AliasMap *globalAliasMap, AliasMap *argumentsAliasMap)
@@ -190,12 +191,27 @@ void EscapeDetect::handleGEPInst(GetElementPtrInst *gepInst, AliasMap *localAlia
 	if (isInMap(src, localAliasMap)) {
 		addToMap(localAliasMap, dst, src);
 		varModified = localAliasMap->lookup(dst);
+		if (isInMap(dst, globalAliasMap)) {
+			globalAliasMap->erase(globalAliasMap->find(dst));
+		} else if (isInMap(dst, argumentsAliasMap)) {
+			argumentsAliasMap->erase(argumentsAliasMap->find(dst));
+		}
 	} else if (isInMap(src, globalAliasMap)) {
 		addToMap(globalAliasMap, dst, src);
 		varModified = globalAliasMap->lookup(dst);
+		if (isInMap(dst, localAliasMap)) {
+			localAliasMap->erase(localAliasMap->find(dst));
+		} else if (isInMap(dst, argumentsAliasMap)) {
+			argumentsAliasMap->erase(argumentsAliasMap->find(dst));
+		}
 	} else if (isInMap(src, argumentsAliasMap)) {
 		addToMap(argumentsAliasMap, dst, src);
 		varModified = argumentsAliasMap->lookup(dst);
+		if (isInMap(dst, localAliasMap)) {
+			localAliasMap->erase(localAliasMap->find(dst));
+		} else if (isInMap(dst, globalAliasMap)) {
+			globalAliasMap->erase(globalAliasMap->find(dst));
+		}
 	}
 	
 	VIMap &ref = *valueToInst;
@@ -217,6 +233,13 @@ bool EscapeDetect::checkGlobalVarEscape(AliasMap *localAliasMap, AliasMap *globa
 	//outs() << "check global escape: " << storeInst << "\n";
 	Value *src = storeInst->getOperand(0);
 	Value *dst = storeInst->getOperand(1);
+
+	if (isa<GEPOperator>(src)) {
+		//outs() << "-----------is GEP!!!\n";
+		GEPOperator *gep = dyn_cast<GEPOperator>(src);
+		Value *gepValue = gep->getOperand(0);
+		src = gepValue;
+	}
 	
 	if (isInMap(src, localAliasMap) &&
 		isInMap(dst, globalAliasMap)) {
@@ -233,6 +256,13 @@ bool EscapeDetect::checkArgumentEscape(AliasMap *localAliasMap, AliasMap *argume
 	Value *src = storeInst->getOperand(0);
 	Value *dst = storeInst->getOperand(1);
 
+	if (isa<GEPOperator>(src)) {
+		//outs() << "-----------is GEP!!!\n";
+		GEPOperator *gep = dyn_cast<GEPOperator>(src);
+		Value *gepValue = gep->getOperand(0);
+		src = gepValue;
+	}
+
 	if (isInMap(src, localAliasMap) &&
 		isInMap(dst, argumentsAliasMap)) {
 		AliasMap &aReference = *localAliasMap;
@@ -247,6 +277,13 @@ bool EscapeDetect::checkArgumentEscape(AliasMap *localAliasMap, AliasMap *argume
 bool EscapeDetect::checkLocalVar(AliasMap *localAliasMap, AliasMap *globalAliasMap, AliasMap *argumentsAliasMap, StoreInst *storeInst) {
 	Value *src = storeInst->getOperand(0);
 	Value *dst = storeInst->getOperand(1);
+
+	if (isa<GEPOperator>(src)) {
+		//outs() << "-----------is GEP!!!\n";
+		GEPOperator *gep = dyn_cast<GEPOperator>(src);
+		Value *gepValue = gep->getOperand(0);
+		src = gepValue;
+	}
 
 	if (isa<Constant>(*src) || isInMap(src, localAliasMap)) {
 		addToMap(localAliasMap, dst, src);
@@ -266,6 +303,13 @@ bool EscapeDetect::checkGlobalVar(AliasMap *localAliasMap, AliasMap *globalAlias
 	Value *src = storeInst->getOperand(0);
 	Value *dst = storeInst->getOperand(1);
 
+	if (isa<GEPOperator>(src)) {
+		//outs() << "-----------is GEP!!!\n";
+		GEPOperator *gep = dyn_cast<GEPOperator>(src);
+		Value *gepValue = gep->getOperand(0);
+		src = gepValue;
+	}
+
 	if (isInMap(src, globalAliasMap)) {
 		addToMap(globalAliasMap, dst, src);
 		
@@ -274,8 +318,10 @@ bool EscapeDetect::checkGlobalVar(AliasMap *localAliasMap, AliasMap *globalAlias
 		} else if (isInMap(dst, argumentsAliasMap)) {
 			argumentsAliasMap->erase(argumentsAliasMap->find(dst));
 		}
+		//outs() << "assign a global var\n";
 		return true;
 	} else {
+		//outs() << "not assign a global var\n";
 		return false;
 	}
 }
@@ -283,6 +329,13 @@ bool EscapeDetect::checkGlobalVar(AliasMap *localAliasMap, AliasMap *globalAlias
 bool EscapeDetect::checkArguments(AliasMap *localAliasMap, AliasMap *globalAliasMap, AliasMap *argumentsAliasMap, StoreInst *storeInst) {
 	Value *src = storeInst->getOperand(0);
 	Value *dst = storeInst->getOperand(1);
+
+	if (isa<GEPOperator>(src)) {
+		//outs() << "-----------is GEP!!!\n";
+		GEPOperator *gep = dyn_cast<GEPOperator>(src);
+		Value *gepValue = gep->getOperand(0);
+		src = gepValue;
+	}
 
 	if (isInMap(src, argumentsAliasMap)) {
 		addToMap(argumentsAliasMap, dst, src);
